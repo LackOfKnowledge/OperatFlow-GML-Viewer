@@ -58,13 +58,9 @@ class _HomePageState extends State<HomePage> {
         // ignore: avoid_print
         print('Błąd wczytywania pliku: $e');
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Wystąpił błąd podczas parsowania pliku: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Wystąpił błąd podczas parsowania pliku: $e')));
     } finally {
       setState(() {
         _isLoading = false;
@@ -84,9 +80,7 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => _buildParcelsPdf(parcelsToPrint),
-    );
+    await Printing.layoutPdf(onLayout: (format) async => _buildParcelsPdf(parcelsToPrint));
   }
 
   Future<void> _exportSelectedParcelPdf() async {
@@ -115,23 +109,43 @@ class _HomePageState extends State<HomePage> {
     return address.toSingleLine();
   }
 
+  String _toAscii(String text) {
+    const Map<String, String> map = <String, String>{
+      'ą': 'a',
+      'Ą': 'A',
+      'ć': 'c',
+      'Ć': 'C',
+      'ę': 'e',
+      'Ę': 'E',
+      'ł': 'l',
+      'Ł': 'L',
+      'ń': 'n',
+      'Ń': 'N',
+      'ó': 'o',
+      'Ó': 'O',
+      'ś': 's',
+      'Ś': 'S',
+      'ź': 'z',
+      'Ź': 'Z',
+      'ż': 'z',
+      'Ż': 'Z',
+    };
+    var result = text;
+    map.forEach((String from, String to) {
+      result = result.replaceAll(from, to);
+    });
+    return result;
+  }
+
   Future<Uint8List> _buildParcelsPdf(List<Parcel> parcels) async {
     final pw.Font baseFont = await PdfGoogleFonts.robotoRegular();
     final pw.Font boldFont = await PdfGoogleFonts.robotoBold();
 
-    final pw.ThemeData theme = pw.ThemeData.withFont(
-      base: baseFont,
-      bold: boldFont,
-    );
+    final pw.ThemeData theme = pw.ThemeData.withFont(base: baseFont, bold: boldFont);
 
     final pw.Document doc = pw.Document(theme: theme);
-    final pw.TextStyle headerStyle = pw.TextStyle(
-      fontSize: 16,
-      fontWeight: pw.FontWeight.bold,
-    );
-    final pw.TextStyle labelStyle = pw.TextStyle(
-      fontWeight: pw.FontWeight.bold,
-    );
+    final pw.TextStyle headerStyle = pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold);
+    final pw.TextStyle labelStyle = pw.TextStyle(fontWeight: pw.FontWeight.bold);
 
     pw.TableRow detailRow(String label, String value) {
       return pw.TableRow(
@@ -140,24 +154,26 @@ class _HomePageState extends State<HomePage> {
             padding: const pw.EdgeInsets.all(4),
             child: pw.Text(label, style: labelStyle),
           ),
-          pw.Padding(
-            padding: const pw.EdgeInsets.all(4),
-            child: pw.Text(value),
-          ),
+          pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(value)),
         ],
       );
     }
 
     for (final Parcel parcel in parcels) {
-      final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares =
-          _gmlService.getSubjectsForParcel(parcel);
+      final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares = _gmlService
+          .getSubjectsForParcel(parcel);
       final List<BoundaryPoint> points = _gmlService.getPointsForParcel(parcel);
-      final List<Address> parcelAddresses = _gmlService.getAddressesForParcel(
-        parcel,
-      );
+      final List<Address> parcelAddresses = _gmlService.getAddressesForParcel(parcel);
       final String adresNieruchomosci = parcelAddresses.isEmpty
           ? 'Brak danych adresowych.'
           : parcelAddresses.map(_formatAddress).join('\n');
+      final String jednostkaLabel = parcel.jednostkaNazwa != null && parcel.jednostkaId != null
+          ? '${_toAscii(parcel.jednostkaNazwa!)} [${parcel.jednostkaId}]'
+          : parcel.jednostkaEwidencyjna;
+      final String obrebCode = parcel.obrebId?.split('.').last ?? parcel.obreb;
+      final String obrebLabel = parcel.obrebNazwa != null
+          ? '${_toAscii(parcel.obrebNazwa!)} [$obrebCode]'
+          : obrebCode;
 
       doc.addPage(
         pw.MultiPage(
@@ -176,20 +192,17 @@ class _HomePageState extends State<HomePage> {
               },
               border: pw.TableBorder.all(width: 0.3),
               children: <pw.TableRow>[
-                detailRow('Jednostka ewidencyjna', parcel.jednostkaEwidencyjna),
-                detailRow('Obręb', parcel.obreb),
-                detailRow('Działka', parcel.numerDzialki),
+                detailRow('Jednostka', jednostkaLabel),
+                detailRow('Obreb', obrebLabel),
+                detailRow('Dzialka', parcel.numerDzialki),
                 detailRow('Numer KW', parcel.numerKW ?? 'Brak'),
-                detailRow(
-                  'Pole ewidencyjne',
-                  '${parcel.pole?.toString() ?? '?'} ha',
-                ),
+                detailRow('Pole ewidencyjne', '${parcel.pole?.toString() ?? '?'} ha'),
                 detailRow('Adres nieruchomosci', adresNieruchomosci),
               ],
             ),
             if (parcel.uzytki.isNotEmpty) ...<pw.Widget>[
               pw.SizedBox(height: 12),
-              pw.Text('Klasoużytki', style: headerStyle),
+              pw.Text('Klasouzytki', style: headerStyle),
               pw.SizedBox(height: 4),
               pw.Table(
                 columnWidths: const <int, pw.TableColumnWidth>{
@@ -215,9 +228,7 @@ class _HomePageState extends State<HomePage> {
                       children: <pw.Widget>[
                         pw.Padding(
                           padding: const pw.EdgeInsets.all(4),
-                          child: pw.Text(
-                            '${u.ofu} (${u.ozu})${u.ozk != null ? '/${u.ozk}' : ''}',
-                          ),
+                          child: pw.Text('${u.ofu} (${u.ozu})${u.ozk != null ? '/${u.ozk}' : ''}'),
                         ),
                         pw.Padding(
                           padding: const pw.EdgeInsets.all(4),
@@ -259,9 +270,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ],
                   ),
-                  ...subjectsWithShares.map((
-                    MapEntry<OwnershipShare, Subject?> entry,
-                  ) {
+                  ...subjectsWithShares.map((MapEntry<OwnershipShare, Subject?> entry) {
                     final OwnershipShare share = entry.key;
                     final Subject? subject = entry.value;
                     return pw.TableRow(
@@ -340,14 +349,8 @@ class _HomePageState extends State<HomePage> {
                           padding: const pw.EdgeInsets.all(4),
                           child: pw.Text(p.numer ?? '-'),
                         ),
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(4),
-                          child: pw.Text(p.x ?? '-'),
-                        ),
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(4),
-                          child: pw.Text(p.y ?? '-'),
-                        ),
+                        pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(p.x ?? '-')),
+                        pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(p.y ?? '-')),
                         pw.Padding(
                           padding: const pw.EdgeInsets.all(4),
                           child: pw.Text(p.isd ?? '-'),
@@ -390,9 +393,9 @@ class _HomePageState extends State<HomePage> {
     await file.writeAsBytes(bytes, flush: true);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Plik PDF został zapisany.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Plik PDF został zapisany.')));
   }
 
   Future<void> _handleDrop(DropDoneDetails details) async {
@@ -424,13 +427,9 @@ class _HomePageState extends State<HomePage> {
         // ignore: avoid_print
         print('Błąd wczytywania pliku przez drag&drop: $e');
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Wystąpił błąd podczas parsowania pliku: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Wystąpił błąd podczas parsowania pliku: $e')));
     } finally {
       setState(() {
         _isLoading = false;
@@ -443,9 +442,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _fileName != null
-              ? 'OperatFlow GML Viewer $_fileName'
-              : 'OperatFlow GML Viewer',
+          _fileName != null ? 'OperatFlow GML Viewer $_fileName' : 'OperatFlow GML Viewer',
         ),
         actions: <Widget>[
           if (_markedParcelIds.isNotEmpty)
@@ -534,16 +531,13 @@ class _HomePageState extends State<HomePage> {
                 children: <Widget>[
                   Icon(Icons.file_upload, size: 32, color: primary),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Upuść swój plik GML tutaj',
-                    style: TextStyle(fontSize: 16),
-                  ),
+                  const Text('Upuść swój plik GML tutaj', style: TextStyle(fontSize: 16)),
                   const SizedBox(height: 4),
                   Text(
                     'Obsługiwane rozszerzenia: .gml, .xml',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF4B5B70),
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF4B5B70)),
                   ),
                 ],
               ),
@@ -566,21 +560,16 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: <Widget>[
-                        Text(
-                          'Działki',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
+                        Text('Działki', style: Theme.of(context).textTheme.titleMedium),
                         Text(
                           _gmlService.parcels.length.toString(),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: const Color(0xFF4B5B70)),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF4B5B70)),
                         ),
                       ],
                     ),
@@ -601,8 +590,9 @@ class _HomePageState extends State<HomePage> {
                         padding: const EdgeInsets.all(24.0),
                         child: Text(
                           'Wybierz działkę z listy po lewej stronie.',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(color: const Color(0xFF4B5B70)),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyLarge?.copyWith(color: const Color(0xFF4B5B70)),
                         ),
                       ),
                     ),
@@ -638,10 +628,7 @@ class _HomePageState extends State<HomePage> {
                 });
               },
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: <Widget>[
                     Expanded(
@@ -663,10 +650,7 @@ class _HomePageState extends State<HomePage> {
                       },
                     ),
                     if (isCurrent)
-                      Icon(
-                        Icons.chevron_right,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                      Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.primary),
                   ],
                 ),
               ),
@@ -723,37 +707,38 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildParcelDetails(Parcel parcel) {
-    final List<Address> parcelAddresses = _gmlService.getAddressesForParcel(
-      parcel,
-    );
+    final List<Address> parcelAddresses = _gmlService.getAddressesForParcel(parcel);
     final String adresNieruchomosci = parcelAddresses.isEmpty
         ? 'Brak danych adresowych.'
         : parcelAddresses.map(_formatAddress).join('\n');
+    final String jednostkaLabel = parcel.jednostkaNazwa != null && parcel.jednostkaId != null
+        ? '${_toAscii(parcel.jednostkaNazwa!)} [${parcel.jednostkaId}]'
+        : parcel.jednostkaEwidencyjna;
+    final String obrebCode = parcel.obrebId != null
+        ? parcel.obrebId!.split('.').last
+        : parcel.obreb;
+    final String obrebLabel = parcel.obrebNazwa != null
+        ? '${_toAscii(parcel.obrebNazwa!)} [$obrebCode]'
+        : obrebCode;
 
     return Column(
       children: <Widget>[
         _buildSectionCard(
-          title: 'Dane dziaÄąâ€ški',
+          title: 'Dane dzialki',
           children: <Widget>[
-            _buildDetailRow(
-              'Jednostka ewidencyjna:',
-              parcel.jednostkaEwidencyjna,
-            ),
-            _buildDetailRow('Obręb:', parcel.obreb),
-            _buildDetailRow('Działka:', parcel.numerDzialki),
+            _buildDetailRow('Jednostka:', jednostkaLabel),
+            _buildDetailRow('Obreb:', obrebLabel),
+            _buildDetailRow('Dzialka:', parcel.numerDzialki),
             _buildDetailRow('Numer KW:', parcel.numerKW ?? 'Brak'),
-            _buildDetailRow(
-              'Pole ewidencyjne:',
-              '${parcel.pole?.toString() ?? '?'} ha',
-            ),
+            _buildDetailRow('Pole ewidencyjne:', '${parcel.pole?.toString() ?? '?'} ha'),
             _buildDetailRow('Adres nieruchomosci', adresNieruchomosci),
           ],
         ),
         const SizedBox(height: 16),
         _buildSectionCard(
-          title: 'KlasouÄąÄ˝ytki',
+          title: 'Klasouzytki',
           children: parcel.uzytki.isEmpty
-              ? <Widget>[_buildDetailRow('Brak', 'danych o użytkach.')]
+              ? <Widget>[_buildDetailRow('Brak', 'danych o uzytkach.')]
               : parcel.uzytki
                     .map(
                       (LandUse uzytek) => _buildDetailRow(
@@ -769,8 +754,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildSubjectDetailsWithAddress(Parcel parcel) {
-    final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares =
-        _gmlService.getSubjectsForParcel(parcel);
+    final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares = _gmlService
+        .getSubjectsForParcel(parcel);
 
     return _buildSectionCard(
       title: 'Dane podmiotowe',
@@ -791,10 +776,7 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    _buildDetailRow(
-                      'Podmiot:',
-                      subject?.name ?? 'Nieznany podmiot',
-                    ),
+                    _buildDetailRow('Podmiot:', subject?.name ?? 'Nieznany podmiot'),
                     _buildDetailRow('Rodzaj:', subject?.type ?? 'Brak'),
                     _buildDetailRow('Udzial:', share.share),
                     _buildDetailRow('Adres:', adresPodmiotu),
@@ -806,8 +788,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildSubjectDetails(Parcel parcel) {
-    final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares =
-        _gmlService.getSubjectsForParcel(parcel);
+    final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares = _gmlService
+        .getSubjectsForParcel(parcel);
     return _buildSectionCard(
       title: 'Dane podmiotowe',
       children: subjectsWithShares.isEmpty
@@ -826,10 +808,7 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    _buildDetailRow(
-                      'Podmiot:',
-                      subject?.name ?? 'Nieznany podmiot',
-                    ),
+                    _buildDetailRow('Podmiot:', subject?.name ?? 'Nieznany podmiot'),
                     _buildDetailRow('Rodzaj:', subject?.type ?? 'Brak'),
                     _buildDetailRow('Udzial:', share.share),
                   ],
@@ -878,10 +857,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSectionCard({
-    required String title,
-    required List<Widget> children,
-  }) {
+  Widget _buildSectionCard({required String title, required List<Widget> children}) {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -889,10 +865,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            SelectableText(
-              title,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            SelectableText(title, style: Theme.of(context).textTheme.titleMedium),
             const Divider(height: 24),
             ...children,
           ],
@@ -909,16 +882,9 @@ class _HomePageState extends State<HomePage> {
         children: <Widget>[
           SelectableText(
             '$title ',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
-          Expanded(
-            child: SelectableText(
-              value,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-          ),
+          Expanded(child: SelectableText(value, style: Theme.of(context).textTheme.bodyLarge)),
         ],
       ),
     );

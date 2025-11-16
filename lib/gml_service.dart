@@ -17,6 +17,10 @@ class Parcel {
   final List<LandUse> uzytki;
   final String? jrgId;
   final List<String> pointRefs;
+  final String? jednostkaId;
+  final String? jednostkaNazwa;
+  final String? obrebId;
+  final String? obrebNazwa;
 
   Parcel({
     required this.gmlId,
@@ -26,6 +30,10 @@ class Parcel {
     this.uzytki = const [],
     this.jrgId,
     this.pointRefs = const [],
+    this.jednostkaId,
+    this.jednostkaNazwa,
+    this.obrebId,
+    this.obrebNazwa,
   }) : jednostkaEwidencyjna = _parseIdPart(idDzialki, 0),
        obreb = _parseIdPart(idDzialki, 1),
        numerDzialki = _parseIdPart(idDzialki, 2);
@@ -217,6 +225,9 @@ class GmlService {
     final Map<String, Map<String, dynamic>> parsedAddresses = {};
     final Map<String, List<String>> parsedSubjectAddressRefs = {};
     final Map<String, List<String>> parsedParcelAddressRefs = {};
+    final Map<String, Map<String, dynamic>> parsedObreby = {};
+    final Map<String, Map<String, dynamic>> parsedJednostkiEwid = {};
+    final Map<String, String> parcelObrebRefs = {};
 
     try {
       final gmlContent = utf8.decode(fileBytes);
@@ -262,6 +273,15 @@ class GmlService {
               if (adresRefs.isNotEmpty) {
                 parsedParcelAddressRefs[parcel.gmlId] = adresRefs;
               }
+
+              final String? lokalizacjaHref = _firstElementByLocal(
+                element,
+                'lokalizacjaDzialki',
+              )?.getAttribute('xlink:href');
+              final String? lokalizacjaId = _stripHref(lokalizacjaHref);
+              if (lokalizacjaId != null && lokalizacjaId.isNotEmpty) {
+                parcelObrebRefs[parcel.gmlId] = lokalizacjaId;
+              }
             }
             break;
           case 'EGB_OsobaFizyczna':
@@ -300,6 +320,43 @@ class GmlService {
               parsedRegUnits[regUnit.gmlId] = {
                 'gmlId': regUnit.gmlId,
                 'idJRG': regUnit.idJRG,
+              };
+            }
+            break;
+          case 'EGB_ObrebEwidencyjny':
+            final String? gmlIdObrebu = element.getAttribute('gml:id');
+            if (gmlIdObrebu != null) {
+              final String? idObrebu = _getElementText(element, 'idObrebu');
+              final String? nazwaObrebu = _getElementText(
+                element,
+                'nazwaWlasna',
+              );
+              final String? jednostkaHref = _firstElementByLocal(
+                element,
+                'lokalizacjaObrebu',
+              )?.getAttribute('xlink:href');
+
+              parsedObreby[gmlIdObrebu] = <String, dynamic>{
+                'idObrebu': idObrebu,
+                'nazwa': nazwaObrebu,
+                'jednostkaHref': jednostkaHref,
+              };
+            }
+            break;
+          case 'EGB_JednostkaEwidencyjna':
+            final String? gmlIdJedn = element.getAttribute('gml:id');
+            if (gmlIdJedn != null) {
+              final String? idJednostki = _getElementText(
+                element,
+                'idJednostkiEwid',
+              );
+              final String? nazwaJednostki = _getElementText(
+                element,
+                'nazwaWlasna',
+              );
+              parsedJednostkiEwid[gmlIdJedn] = <String, dynamic>{
+                'idJednostkiEwid': idJednostki,
+                'nazwa': nazwaJednostki,
               };
             }
             break;
@@ -375,11 +432,23 @@ class GmlService {
       'addresses': parsedAddresses,
       'subjectAddressRefs': parsedSubjectAddressRefs,
       'parcelAddressRefs': parsedParcelAddressRefs,
+      'obreby': parsedObreby,
+      'jednostkiEwid': parsedJednostkiEwid,
+      'parcelObrebRefs': parcelObrebRefs,
     };
   }
 
   void _setParsedData(Map<String, dynamic> parsedData) {
     if (parsedData.isEmpty) return;
+
+    final Map<String, dynamic> obrebyData =
+        parsedData['obreby'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final Map<String, dynamic> jednostkiEwidData =
+        parsedData['jednostkiEwid'] as Map<String, dynamic>? ??
+        <String, dynamic>{};
+    final Map<String, dynamic> parcelObrebRefsData =
+        parsedData['parcelObrebRefs'] as Map<String, dynamic>? ??
+        <String, dynamic>{};
 
     final Map<String, Address> addressesById = {};
     final addressesData =
@@ -412,15 +481,47 @@ class GmlService {
           )
           .toList();
 
+      final String parcelGmlId = map['gmlId'] as String;
+
+      String? obrebId;
+      String? obrebNazwa;
+      String? jednostkaId;
+      String? jednostkaNazwa;
+
+      final String? obrebRefId = parcelObrebRefsData[parcelGmlId] as String?;
+      if (obrebRefId != null) {
+        final Map<dynamic, dynamic>? obrebData =
+            obrebyData[obrebRefId] as Map<dynamic, dynamic>?;
+        if (obrebData != null) {
+          obrebId = obrebData['idObrebu'] as String?;
+          obrebNazwa = obrebData['nazwa'] as String?;
+
+          final String? jednostkaHref = obrebData['jednostkaHref'] as String?;
+          final String? jednostkaGmlId = _stripHref(jednostkaHref);
+          if (jednostkaGmlId != null) {
+            final Map<dynamic, dynamic>? jednData =
+                jednostkiEwidData[jednostkaGmlId] as Map<dynamic, dynamic>?;
+            if (jednData != null) {
+              jednostkaId = jednData['idJednostkiEwid'] as String?;
+              jednostkaNazwa = jednData['nazwa'] as String?;
+            }
+          }
+        }
+      }
+
       parcels.add(
         Parcel(
-          gmlId: map['gmlId'] as String,
+          gmlId: parcelGmlId,
           idDzialki: map['idDzialki'] as String,
           numerKW: map['numerKW'] as String?,
           pole: (map['pole'] as num?)?.toDouble(),
           uzytki: uzytki,
           jrgId: map['jrgId'] as String?,
           pointRefs: (map['pointRefs'] as List<dynamic>? ?? []).cast<String>(),
+          jednostkaId: jednostkaId,
+          jednostkaNazwa: jednostkaNazwa,
+          obrebId: obrebId,
+          obrebNazwa: obrebNazwa,
         ),
       );
     }
