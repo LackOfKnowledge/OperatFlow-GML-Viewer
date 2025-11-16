@@ -60,7 +60,9 @@ class _HomePageState extends State<HomePage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Wystąpił błąd podczas parsowania pliku: $e'),
+          content: Text(
+            'Wystąpił błąd podczas parsowania pliku: $e',
+          ),
         ),
       );
     } finally {
@@ -90,8 +92,10 @@ class _HomePageState extends State<HomePage> {
   Future<void> _exportSelectedParcelPdf() async {
     if (_selectedParcel == null) return;
 
-    final String safeNumber = _selectedParcel!.pelnyNumerDzialki
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final String safeNumber = _selectedParcel!.pelnyNumerDzialki.replaceAll(
+      RegExp(r'[\\/:*?"<>|]'),
+      '_',
+    );
 
     final Uint8List bytes = await _buildParcelsPdf(<Parcel>[_selectedParcel!]);
     await _savePdf(bytes, 'OperatFlow_GML_$safeNumber.pdf');
@@ -105,6 +109,10 @@ class _HomePageState extends State<HomePage> {
 
     final Uint8List bytes = await _buildParcelsPdf(selectedParcels);
     await _savePdf(bytes, 'OperatFlow_GML_zbiorczy.pdf');
+  }
+
+  String _formatAddress(Address address) {
+    return address.toSingleLine();
   }
 
   Future<Uint8List> _buildParcelsPdf(List<Parcel> parcels) async {
@@ -143,18 +151,20 @@ class _HomePageState extends State<HomePage> {
     for (final Parcel parcel in parcels) {
       final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares =
           _gmlService.getSubjectsForParcel(parcel);
-      final List<BoundaryPoint> points =
-          _gmlService.getPointsForParcel(parcel);
+      final List<BoundaryPoint> points = _gmlService.getPointsForParcel(parcel);
+      final List<Address> parcelAddresses = _gmlService.getAddressesForParcel(
+        parcel,
+      );
+      final String adresNieruchomosci = parcelAddresses.isEmpty
+          ? 'Brak danych adresowych.'
+          : parcelAddresses.map(_formatAddress).join('\n');
 
       doc.addPage(
         pw.MultiPage(
           build: (pw.Context context) => <pw.Widget>[
             pw.Text(
               'Działka ${parcel.pelnyNumerDzialki}',
-              style: pw.TextStyle(
-                fontSize: 20,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 12),
             pw.Text('Dane działki', style: headerStyle),
@@ -174,6 +184,7 @@ class _HomePageState extends State<HomePage> {
                   'Pole ewidencyjne',
                   '${parcel.pole?.toString() ?? '?'} ha',
                 ),
+                detailRow('Adres nieruchomosci', adresNieruchomosci),
               ],
             ),
             if (parcel.uzytki.isNotEmpty) ...<pw.Widget>[
@@ -210,9 +221,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                         pw.Padding(
                           padding: const pw.EdgeInsets.all(4),
-                          child: pw.Text(
-                            u.powierzchnia?.toString() ?? '?',
-                          ),
+                          child: pw.Text(u.powierzchnia?.toString() ?? '?'),
                         ),
                       ],
                     ),
@@ -246,34 +255,32 @@ class _HomePageState extends State<HomePage> {
                       ),
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text('Udział', style: labelStyle),
+                        child: pw.Text('Udziały', style: labelStyle),
                       ),
                     ],
                   ),
-                  ...subjectsWithShares.map(
-                    (MapEntry<OwnershipShare, Subject?> entry) {
-                      final OwnershipShare share = entry.key;
-                      final Subject? subject = entry.value;
-                      return pw.TableRow(
-                        children: <pw.Widget>[
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(
-                              subject?.name ?? 'Nieznany podmiot',
-                            ),
-                          ),
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(subject?.type ?? 'Brak'),
-                          ),
-                          pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(share.share),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                  ...subjectsWithShares.map((
+                    MapEntry<OwnershipShare, Subject?> entry,
+                  ) {
+                    final OwnershipShare share = entry.key;
+                    final Subject? subject = entry.value;
+                    return pw.TableRow(
+                      children: <pw.Widget>[
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(4),
+                          child: pw.Text(subject?.name ?? 'Nieznany podmiot'),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(4),
+                          child: pw.Text(subject?.type ?? 'Brak'),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(4),
+                          child: pw.Text(share.share),
+                        ),
+                      ],
+                    );
+                  }),
                 ],
               ),
             pw.SizedBox(height: 16),
@@ -395,13 +402,10 @@ class _HomePageState extends State<HomePage> {
 
     if (details.files.isEmpty) return;
 
-    final file = details.files.firstWhere(
-      (f) {
-        final String name = f.name.toLowerCase();
-        return name.endsWith('.gml') || name.endsWith('.xml');
-      },
-      orElse: () => details.files.first,
-    );
+    final file = details.files.firstWhere((f) {
+      final String name = f.name.toLowerCase();
+      return name.endsWith('.gml') || name.endsWith('.xml');
+    }, orElse: () => details.files.first);
 
     setState(() {
       _isLoading = true;
@@ -422,7 +426,9 @@ class _HomePageState extends State<HomePage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Wystąpił błąd podczas parsowania pliku: $e'),
+          content: Text(
+            'Wystąpił błąd podczas parsowania pliku: $e',
+          ),
         ),
       );
     } finally {
@@ -438,7 +444,7 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: Text(
           _fileName != null
-              ? 'OperatFlow GML Viewer – $_fileName'
+              ? 'OperatFlow GML Viewer $_fileName'
               : 'OperatFlow GML Viewer',
         ),
         actions: <Widget>[
@@ -457,7 +463,7 @@ class _HomePageState extends State<HomePage> {
           if (_selectedParcel != null)
             IconButton(
               icon: const Icon(Icons.picture_as_pdf),
-              tooltip: 'Eksportuj działkę (PDF)',
+              tooltip: 'Eksportuj dane działki (PDF)',
               onPressed: _exportSelectedParcelPdf,
             ),
           IconButton(
@@ -529,16 +535,15 @@ class _HomePageState extends State<HomePage> {
                   Icon(Icons.file_upload, size: 32, color: primary),
                   const SizedBox(height: 12),
                   const Text(
-                    'Upuść plik GML tutaj',
+                    'Upuść swój plik GML tutaj',
                     style: TextStyle(fontSize: 16),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Obsługiwane rozszerzenia: .gml, .xml',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: const Color(0xFF4B5B70)),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF4B5B70),
+                    ),
                   ),
                 ],
               ),
@@ -574,9 +579,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                         Text(
                           _gmlService.parcels.length.toString(),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
+                          style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: const Color(0xFF4B5B70)),
                         ),
                       ],
@@ -598,9 +601,7 @@ class _HomePageState extends State<HomePage> {
                         padding: const EdgeInsets.all(24.0),
                         child: Text(
                           'Wybierz działkę z listy po lewej stronie.',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyLarge
+                          style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(color: const Color(0xFF4B5B70)),
                         ),
                       ),
@@ -712,7 +713,7 @@ class _HomePageState extends State<HomePage> {
             padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
             child: switch (_currentView) {
               DetailView.dane => _buildParcelDetails(parcel),
-              DetailView.podmioty => _buildSubjectDetails(parcel),
+              DetailView.podmioty => _buildSubjectDetailsWithAddress(parcel),
               DetailView.punkty => _buildPointDetails(parcel),
             },
           ),
@@ -722,10 +723,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildParcelDetails(Parcel parcel) {
+    final List<Address> parcelAddresses = _gmlService.getAddressesForParcel(
+      parcel,
+    );
+    final String adresNieruchomosci = parcelAddresses.isEmpty
+        ? 'Brak danych adresowych.'
+        : parcelAddresses.map(_formatAddress).join('\n');
+
     return Column(
       children: <Widget>[
         _buildSectionCard(
-          title: 'Dane działki',
+          title: 'Dane dziaÄąâ€ški',
           children: <Widget>[
             _buildDetailRow(
               'Jednostka ewidencyjna:',
@@ -738,41 +746,46 @@ class _HomePageState extends State<HomePage> {
               'Pole ewidencyjne:',
               '${parcel.pole?.toString() ?? '?'} ha',
             ),
+            _buildDetailRow('Adres nieruchomosci', adresNieruchomosci),
           ],
         ),
         const SizedBox(height: 16),
         _buildSectionCard(
-          title: 'Klasoużytki',
+          title: 'KlasouÄąÄ˝ytki',
           children: parcel.uzytki.isEmpty
-              ? <Widget>[
-                  _buildDetailRow('Brak', 'danych o użytkach.'),
-                ]
+              ? <Widget>[_buildDetailRow('Brak', 'danych o użytkach.')]
               : parcel.uzytki
-                  .map(
-                    (LandUse uzytek) => _buildDetailRow(
-                      '${uzytek.ofu} (${uzytek.ozu})'
-                      '${uzytek.ozk != null ? '/${uzytek.ozk}' : ''}:',
-                      '${uzytek.powierzchnia?.toString() ?? '?'} ha',
-                    ),
-                  )
-                  .toList(),
+                    .map(
+                      (LandUse uzytek) => _buildDetailRow(
+                        '${uzytek.ofu} (${uzytek.ozu})'
+                            '${uzytek.ozk != null ? '/${uzytek.ozk}' : ''}:',
+                        '${uzytek.powierzchnia?.toString() ?? '?'} ha',
+                      ),
+                    )
+                    .toList(),
         ),
       ],
     );
   }
 
-  Widget _buildSubjectDetails(Parcel parcel) {
+  Widget _buildSubjectDetailsWithAddress(Parcel parcel) {
     final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares =
         _gmlService.getSubjectsForParcel(parcel);
+
     return _buildSectionCard(
       title: 'Dane podmiotowe',
       children: subjectsWithShares.isEmpty
-          ? <Widget>[
-              _buildDetailRow('Brak', 'powiązanych podmiotów.'),
-            ]
+          ? <Widget>[_buildDetailRow('Brak', 'Powiązanych podmiotów')]
           : subjectsWithShares.map((MapEntry<OwnershipShare, Subject?> entry) {
               final OwnershipShare share = entry.key;
               final Subject? subject = entry.value;
+              final List<Address> addresses = subject != null
+                  ? _gmlService.getAddressesForSubject(subject)
+                  : <Address>[];
+              final String adresPodmiotu = addresses.isEmpty
+                  ? 'Brak danych adresowych.'
+                  : addresses.map(_formatAddress).join('\n');
+
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),
                 child: Column(
@@ -783,7 +796,42 @@ class _HomePageState extends State<HomePage> {
                       subject?.name ?? 'Nieznany podmiot',
                     ),
                     _buildDetailRow('Rodzaj:', subject?.type ?? 'Brak'),
-                    _buildDetailRow('Udział:', share.share),
+                    _buildDetailRow('Udzial:', share.share),
+                    _buildDetailRow('Adres:', adresPodmiotu),
+                  ],
+                ),
+              );
+            }).toList(),
+    );
+  }
+
+  Widget _buildSubjectDetails(Parcel parcel) {
+    final List<MapEntry<OwnershipShare, Subject?>> subjectsWithShares =
+        _gmlService.getSubjectsForParcel(parcel);
+    return _buildSectionCard(
+      title: 'Dane podmiotowe',
+      children: subjectsWithShares.isEmpty
+          ? <Widget>[_buildDetailRow('Brak', 'Powiązanych podmiotów')]
+          : subjectsWithShares.map((MapEntry<OwnershipShare, Subject?> entry) {
+              final OwnershipShare share = entry.key;
+              final Subject? subject = entry.value;
+              final List<Address> addresses = subject != null
+                  ? _gmlService.getAddressesForSubject(subject)
+                  : <Address>[];
+              final String adresPodmiotu = addresses.isEmpty
+                  ? 'Brak danych adresowych.'
+                  : addresses.map(_formatAddress).join('\n');
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _buildDetailRow(
+                      'Podmiot:',
+                      subject?.name ?? 'Nieznany podmiot',
+                    ),
+                    _buildDetailRow('Rodzaj:', subject?.type ?? 'Brak'),
+                    _buildDetailRow('Udzial:', share.share),
                   ],
                 ),
               );
@@ -861,10 +909,9 @@ class _HomePageState extends State<HomePage> {
         children: <Widget>[
           SelectableText(
             '$title ',
-            style: Theme.of(context)
-                .textTheme
-                .bodyLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           Expanded(
             child: SelectableText(

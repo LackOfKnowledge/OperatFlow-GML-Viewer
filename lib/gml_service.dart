@@ -26,9 +26,9 @@ class Parcel {
     this.uzytki = const [],
     this.jrgId,
     this.pointRefs = const [],
-  })  : jednostkaEwidencyjna = _parseIdPart(idDzialki, 0),
-        obreb = _parseIdPart(idDzialki, 1),
-        numerDzialki = _parseIdPart(idDzialki, 2);
+  }) : jednostkaEwidencyjna = _parseIdPart(idDzialki, 0),
+       obreb = _parseIdPart(idDzialki, 1),
+       numerDzialki = _parseIdPart(idDzialki, 2);
 
   static String _parseIdPart(String id, int part) {
     try {
@@ -51,18 +51,14 @@ class LandUse {
   final String? ozk;
   final double? powierzchnia;
 
-  LandUse({
-    required this.ofu,
-    required this.ozu,
-    this.ozk,
-    this.powierzchnia,
-  });
+  LandUse({required this.ofu, required this.ozu, this.ozk, this.powierzchnia});
 
   @override
   String toString() {
     final ozkStr = ozk != null ? '/$ozk' : '';
-    final powStr =
-        powierzchnia != null ? ' (${powierzchnia.toString()} ha)' : '';
+    final powStr = powierzchnia != null
+        ? ' (${powierzchnia.toString()} ha)'
+        : '';
     return '$ofu$ozkStr ($ozu)$powStr';
   }
 }
@@ -118,6 +114,56 @@ class BoundaryPoint {
   });
 }
 
+class Address {
+  final String gmlId;
+  final String? kraj;
+  final String? miejscowosc;
+  final String? kodPocztowy;
+  final String? ulica;
+  final String? numerPorzadkowy;
+
+  Address({
+    required this.gmlId,
+    this.kraj,
+    this.miejscowosc,
+    this.kodPocztowy,
+    this.ulica,
+    this.numerPorzadkowy,
+  });
+
+  String toSingleLine() {
+    final List<String> parts = [];
+
+    final String streetAndNumber = [
+      ulica,
+      numerPorzadkowy,
+    ].where((String? v) => v != null && v.trim().isNotEmpty).join(' ');
+    if (streetAndNumber.isNotEmpty) {
+      parts.add(streetAndNumber);
+    }
+
+    final String cityAndPostal = [
+      kodPocztowy,
+      miejscowosc,
+    ].where((String? v) => v != null && v.trim().isNotEmpty).join(' ');
+    if (cityAndPostal.isNotEmpty) {
+      parts.add(cityAndPostal);
+    }
+
+    if (kraj != null && kraj!.trim().isNotEmpty) {
+      parts.add(kraj!);
+    }
+
+    if (parts.isEmpty) {
+      return 'Brak danych adresowych';
+    }
+    return parts.join(', ');
+  }
+
+  @override
+  String toString() => toSingleLine();
+}
+
 // --- SERWIS ---
 
 class GmlService {
@@ -126,6 +172,8 @@ class GmlService {
   final Map<String, RegistrationUnit> registrationUnits = {};
   final Map<String, List<OwnershipShare>> sharesByJrgId = {};
   final Map<String, BoundaryPoint> boundaryPoints = {};
+  final Map<String, List<Address>> subjectAddresses = {};
+  final Map<String, List<Address>> parcelAddresses = {};
 
   static const String _gmlNs = 'http://www.opengis.net/gml/3.2';
 
@@ -135,14 +183,20 @@ class GmlService {
     registrationUnits.clear();
     sharesByJrgId.clear();
     boundaryPoints.clear();
+    subjectAddresses.clear();
+    parcelAddresses.clear();
 
-    final Map<String, dynamic> parsedData =
-        await compute(_parseInBackground, fileBytes);
+    final Map<String, dynamic> parsedData = await compute(
+      _parseInBackground,
+      fileBytes,
+    );
     _setParsedData(parsedData);
 
     if (kDebugMode) {
-      final sharesCount =
-          sharesByJrgId.values.fold<int>(0, (sum, list) => sum + list.length);
+      final sharesCount = sharesByJrgId.values.fold<int>(
+        0,
+        (sum, list) => sum + list.length,
+      );
       // ignore: avoid_print
       print(
         'GML parsed: ${parcels.length} parcels, '
@@ -160,12 +214,17 @@ class GmlService {
     final Map<String, Map<String, dynamic>> parsedRegUnits = {};
     final Map<String, List<Map<String, dynamic>>> parsedShares = {};
     final Map<String, Map<String, dynamic>> parsedPoints = {};
+    final Map<String, Map<String, dynamic>> parsedAddresses = {};
+    final Map<String, List<String>> parsedSubjectAddressRefs = {};
+    final Map<String, List<String>> parsedParcelAddressRefs = {};
 
     try {
       final gmlContent = utf8.decode(fileBytes);
       final document = XmlDocument.parse(gmlContent);
-      final featureMembers =
-          document.findAllElements('featureMember', namespace: _gmlNs);
+      final featureMembers = document.findAllElements(
+        'featureMember',
+        namespace: _gmlNs,
+      );
 
       for (final member in featureMembers) {
         final element = member.children
@@ -186,16 +245,23 @@ class GmlService {
                 'numerKW': parcel.numerKW,
                 'pole': parcel.pole,
                 'uzytki': parcel.uzytki
-                    .map((u) => {
-                          'ofu': u.ofu,
-                          'ozu': u.ozu,
-                          'ozk': u.ozk,
-                          'powierzchnia': u.powierzchnia,
-                        })
+                    .map(
+                      (u) => {
+                        'ofu': u.ofu,
+                        'ozu': u.ozu,
+                        'ozk': u.ozk,
+                        'powierzchnia': u.powierzchnia,
+                      },
+                    )
                     .toList(),
                 'jrgId': parcel.jrgId,
                 'pointRefs': parcel.pointRefs,
               });
+
+              final List<String> adresRefs = _parseParcelAddressRefs(element);
+              if (adresRefs.isNotEmpty) {
+                parsedParcelAddressRefs[parcel.gmlId] = adresRefs;
+              }
             }
             break;
           case 'EGB_OsobaFizyczna':
@@ -206,6 +272,11 @@ class GmlService {
                 'name': subject.name,
                 'type': subject.type,
               };
+
+              final List<String> adresRefs = _parseSubjectAddressRefs(element);
+              if (adresRefs.isNotEmpty) {
+                parsedSubjectAddressRefs[subject.gmlId] = adresRefs;
+              }
             }
             break;
           case 'EGB_Instytucja':
@@ -216,6 +287,11 @@ class GmlService {
                 'name': subject.name,
                 'type': subject.type,
               };
+
+              final List<String> adresRefs = _parseSubjectAddressRefs(element);
+              if (adresRefs.isNotEmpty) {
+                parsedSubjectAddressRefs[subject.gmlId] = adresRefs;
+              }
             }
             break;
           case 'EGB_JednostkaRejestrowaGruntow':
@@ -255,6 +331,31 @@ class GmlService {
               };
             }
             break;
+          case 'EGB_AdresStalegoPobytu':
+            final Map<String, dynamic>? adresStalego = _parseAdresStalegoPobytu(
+              element,
+            );
+            if (adresStalego != null) {
+              final String gmlId = adresStalego['gmlId'] as String;
+              parsedAddresses[gmlId] = adresStalego;
+            }
+            break;
+          case 'EGB_AdresZameldowania':
+            final Map<String, dynamic>? adresZameldowania =
+                _parseAdresStalegoPobytu(element);
+            if (adresZameldowania != null) {
+              final String gmlId = adresZameldowania['gmlId'] as String;
+              parsedAddresses[gmlId] = adresZameldowania;
+            }
+            break;
+          case 'EGB_AdresNieruchomosci':
+            final Map<String, dynamic>? adresnieruchomosci =
+                _parseAdresNieruchomosci(element);
+            if (adresnieruchomosci != null) {
+              final String gmlId = adresnieruchomosci['gmlId'] as String;
+              parsedAddresses[gmlId] = adresnieruchomosci;
+            }
+            break;
         }
       }
     } catch (e) {
@@ -271,23 +372,44 @@ class GmlService {
       'regUnits': parsedRegUnits,
       'shares': parsedShares,
       'points': parsedPoints,
+      'addresses': parsedAddresses,
+      'subjectAddressRefs': parsedSubjectAddressRefs,
+      'parcelAddressRefs': parsedParcelAddressRefs,
     };
   }
 
   void _setParsedData(Map<String, dynamic> parsedData) {
     if (parsedData.isEmpty) return;
 
+    final Map<String, Address> addressesById = {};
+    final addressesData =
+        parsedData['addresses'] as Map<String, dynamic>? ?? {};
+    addressesData.forEach((String key, dynamic value) {
+      final map = value as Map<dynamic, dynamic>;
+      final address = Address(
+        gmlId: map['gmlId'] as String,
+        kraj: map['kraj'] as String?,
+        miejscowosc: map['miejscowosc'] as String?,
+        kodPocztowy: map['kodPocztowy'] as String?,
+        ulica: map['ulica'] as String?,
+        numerPorzadkowy: map['numerPorzadkowy'] as String?,
+      );
+      addressesById[key] = address;
+    });
+
     final parcelsData = parsedData['parcels'] as List<dynamic>? ?? [];
     for (final dynamic p in parcelsData) {
       final map = p as Map<dynamic, dynamic>;
       final uzytkiData = map['uzytki'] as List<dynamic>? ?? [];
       final uzytki = uzytkiData
-          .map((dynamic u) => LandUse(
-                ofu: (u as Map<dynamic, dynamic>)['ofu'] as String? ?? '?',
-                ozu: u['ozu'] as String? ?? '?',
-                ozk: u['ozk'] as String?,
-                powierzchnia: (u['powierzchnia'] as num?)?.toDouble(),
-              ))
+          .map(
+            (dynamic u) => LandUse(
+              ofu: (u as Map<dynamic, dynamic>)['ofu'] as String? ?? '?',
+              ozu: u['ozu'] as String? ?? '?',
+              ozk: u['ozk'] as String?,
+              powierzchnia: (u['powierzchnia'] as num?)?.toDouble(),
+            ),
+          )
           .toList();
 
       parcels.add(
@@ -298,19 +420,14 @@ class GmlService {
           pole: (map['pole'] as num?)?.toDouble(),
           uzytki: uzytki,
           jrgId: map['jrgId'] as String?,
-          pointRefs:
-              (map['pointRefs'] as List<dynamic>? ?? []).cast<String>(),
+          pointRefs: (map['pointRefs'] as List<dynamic>? ?? []).cast<String>(),
         ),
       );
     }
 
-    // Sortowanie po pełnym numerze działki do wygodnego przeglądania.
-    parcels.sort(
-      (a, b) => a.pelnyNumerDzialki.compareTo(b.pelnyNumerDzialki),
-    );
+    parcels.sort((a, b) => a.pelnyNumerDzialki.compareTo(b.pelnyNumerDzialki));
 
-    final subjectsData =
-        parsedData['subjects'] as Map<String, dynamic>? ?? {};
+    final subjectsData = parsedData['subjects'] as Map<String, dynamic>? ?? {};
     subjectsData.forEach((key, dynamic value) {
       final map = value as Map<dynamic, dynamic>;
       subjects[key] = Subject(
@@ -320,8 +437,7 @@ class GmlService {
       );
     });
 
-    final regUnitsData =
-        parsedData['regUnits'] as Map<String, dynamic>? ?? {};
+    final regUnitsData = parsedData['regUnits'] as Map<String, dynamic>? ?? {};
     regUnitsData.forEach((key, dynamic value) {
       final map = value as Map<dynamic, dynamic>;
       registrationUnits[key] = RegistrationUnit(
@@ -360,19 +476,40 @@ class GmlService {
         operat: map['operat'] as String?,
       );
     });
+
+    final subjectAddressRefsData =
+        parsedData['subjectAddressRefs'] as Map<String, dynamic>? ?? {};
+    subjectAddresses.clear();
+    subjectAddressRefsData.forEach((String subjectId, dynamic value) {
+      final List<String> ids = (value as List<dynamic>).cast<String>();
+      subjectAddresses[subjectId] = ids
+          .map((String id) => addressesById[id])
+          .whereType<Address>()
+          .toList();
+    });
+
+    final parcelAddressRefsData =
+        parsedData['parcelAddressRefs'] as Map<String, dynamic>? ?? {};
+    parcelAddresses.clear();
+    parcelAddressRefsData.forEach((String parcelId, dynamic value) {
+      final List<String> ids = (value as List<dynamic>).cast<String>();
+      parcelAddresses[parcelId] = ids
+          .map((String id) => addressesById[id])
+          .whereType<Address>()
+          .toList();
+    });
   }
 
-  List<MapEntry<OwnershipShare, Subject?>> getSubjectsForParcel(
-    Parcel parcel,
-  ) {
+  List<MapEntry<OwnershipShare, Subject?>> getSubjectsForParcel(Parcel parcel) {
     if (parcel.jrgId == null) return [];
 
     final shares = sharesByJrgId[parcel.jrgId] ?? [];
     final List<MapEntry<OwnershipShare, Subject?>> result = [];
 
     for (final share in shares) {
-      final subject =
-          share.subjectId != null ? subjects[share.subjectId!] : null;
+      final subject = share.subjectId != null
+          ? subjects[share.subjectId!]
+          : null;
       result.add(MapEntry(share, subject));
     }
     return result;
@@ -389,6 +526,14 @@ class GmlService {
       }
     }
     return result;
+  }
+
+  List<Address> getAddressesForParcel(Parcel parcel) {
+    return parcelAddresses[parcel.gmlId] ?? <Address>[];
+  }
+
+  List<Address> getAddressesForSubject(Subject subject) {
+    return subjectAddresses[subject.gmlId] ?? <Address>[];
   }
 
   /// Zwraca pierwszy element potomny o podanej nazwie lokalnej (ignoruje prefix).
@@ -416,15 +561,15 @@ class GmlService {
     final numerKW = _getElementText(element, 'numerKW');
     final poleStr = _getElementText(element, 'poleEwidencyjne');
 
-    final jrgHref = _firstElementByLocal(element, 'JRG2')
-            ?.getAttribute('xlink:href') ??
+    final jrgHref =
+        _firstElementByLocal(element, 'JRG2')?.getAttribute('xlink:href') ??
         _firstElementByLocal(element, 'JRG')?.getAttribute('xlink:href');
     final jrgId = _stripHref(jrgHref);
 
     final List<LandUse> uzytki = [];
     final klasouzytki = element.descendants.whereType<XmlElement>().where(
-          (e) => e.name.local == 'EGB_Klasouzytek',
-        );
+      (e) => e.name.local == 'EGB_Klasouzytek',
+    );
     for (final egbKlasouzytek in klasouzytki) {
       final ofu = _getElementText(egbKlasouzytek, 'OFU');
       final ozu = _getElementText(egbKlasouzytek, 'OZU');
@@ -469,21 +614,17 @@ class GmlService {
     final gmlId = element.getAttribute('gml:id');
     if (gmlId == null) return null;
 
-    // Różne wersje schematu stosują różne nazwy pól,
-    // dlatego obsługujemy oba warianty.
-    final imie = _getElementText(element, 'imiePierwsze') ??
+    final imie =
+        _getElementText(element, 'imiePierwsze') ??
         _getElementText(element, 'pierwszeImie');
-    final nazwisko = _getElementText(element, 'nazwisko') ??
+    final nazwisko =
+        _getElementText(element, 'nazwisko') ??
         _getElementText(element, 'pierwszyCzlonNazwiska');
-    final nazwiskoCzlon1 = _getElementText(
-          element,
-          'nazwiskoPierwszegoCzlonu',
-        ) ??
+    final nazwiskoCzlon1 =
+        _getElementText(element, 'nazwiskoPierwszegoCzlonu') ??
         _getElementText(element, 'pierwszyCzlonNazwiska');
-    final nazwiskoCzlon2 = _getElementText(
-          element,
-          'nazwiskoDrugiegoCzlonu',
-        ) ??
+    final nazwiskoCzlon2 =
+        _getElementText(element, 'nazwiskoDrugiegoCzlonu') ??
         _getElementText(element, 'drugiCzlonNazwiska');
 
     String finalName;
@@ -497,11 +638,7 @@ class GmlService {
       finalName = imie ?? 'Brak danych';
     }
 
-    return Subject(
-      gmlId: gmlId,
-      name: finalName,
-      type: 'Osoba fizyczna',
-    );
+    return Subject(gmlId: gmlId, name: finalName, type: 'Osoba fizyczna');
   }
 
   static Subject? _parseInstytucja(XmlElement element) {
@@ -529,28 +666,32 @@ class GmlService {
     final gmlId = element.getAttribute('gml:id');
     if (gmlId == null) return null;
 
-    final licznik = _getElementText(
-          element,
-          'licznikUlamkaOkreslajacegoWartoscUdzialu',
-        ) ??
+    final licznik =
+        _getElementText(element, 'licznikUlamkaOkreslajacegoWartoscUdzialu') ??
         '1';
-    final mianownik = _getElementText(
+    final mianownik =
+        _getElementText(
           element,
           'mianownikUlamkaOkreslajacegoWartoscUdzialu',
         ) ??
         '1';
 
-    final jrgHref =
-        _firstElementByLocal(element, 'JRG')?.getAttribute('xlink:href');
+    final jrgHref = _firstElementByLocal(
+      element,
+      'JRG',
+    )?.getAttribute('xlink:href');
     final jrgId = _stripHref(jrgHref);
 
     final osobaHref =
-        _firstElementByLocal(element, 'osobaFizyczna')
-            ?.getAttribute('xlink:href') ??
-        _firstElementByLocal(element, 'instytucja1')
-            ?.getAttribute('xlink:href') ??
-        _firstElementByLocal(element, 'instytucja')
-            ?.getAttribute('xlink:href');
+        _firstElementByLocal(
+          element,
+          'osobaFizyczna',
+        )?.getAttribute('xlink:href') ??
+        _firstElementByLocal(
+          element,
+          'instytucja1',
+        )?.getAttribute('xlink:href') ??
+        _firstElementByLocal(element, 'instytucja')?.getAttribute('xlink:href');
 
     final subjectId = _stripHref(osobaHref);
 
@@ -566,26 +707,28 @@ class GmlService {
     final gmlId = element.getAttribute('gml:id');
     if (gmlId == null) return null;
 
-    final numer = _getElementText(
-          element,
-          'oznaczenieWMaterialeZrodlowym',
-        ) ??
+    final numer =
+        _getElementText(element, 'oznaczenieWMaterialeZrodlowym') ??
         _getElementText(element, 'oznWMaterialeZrodlowym') ??
         _getElementText(element, 'idPunktu');
 
-    // ISD / SPD / STB mogą być zakodowane jako pola opisowe:
+    // ISD / SPD / STB mogÄ… byÄ‡ zakodowane jako pola opisowe:
     // - ISD: spelnienieWarunkowDokl
     // - STB: rodzajStabilizacji
     // - SPD: sposobPozyskania
-    final isd = _getElementText(element, 'ISD') ??
+    final isd =
+        _getElementText(element, 'ISD') ??
         _getElementText(element, 'spelnienieWarunkowDokl');
-    final stb = _getElementText(element, 'STB') ??
+    final stb =
+        _getElementText(element, 'STB') ??
         _getElementText(element, 'rodzajStabilizacji');
-    final spd = _getElementText(element, 'SPD') ??
+    final spd =
+        _getElementText(element, 'SPD') ??
         _getElementText(element, 'sposobPozyskania');
 
-    final posElement =
-        element.findAllElements('pos', namespace: _gmlNs).firstOrNull;
+    final posElement = element
+        .findAllElements('pos', namespace: _gmlNs)
+        .firstOrNull;
 
     String? x, y;
     if (posElement != null) {
@@ -596,11 +739,9 @@ class GmlService {
       }
     }
 
-    // Operat może być zapisany jako identyfikatorOperatuWgPZGIK
-    // lub numerOperatuTechnicznego.
     final operat =
         _getElementText(element, 'identyfikatorOperatuWgPZGIK') ??
-            _getElementText(element, 'numerOperatuTechnicznego');
+        _getElementText(element, 'numerOperatuTechnicznego');
 
     return BoundaryPoint(
       gmlId: gmlId,
@@ -612,6 +753,94 @@ class GmlService {
       spd: spd,
       operat: operat,
     );
+  }
+
+  static List<String> _parseSubjectAddressRefs(XmlElement element) {
+    final List<String> result = [];
+    final Iterable<XmlElement> adresElements = element.descendants
+        .whereType<XmlElement>()
+        .where((XmlElement e) {
+          final String local = _normalizeLocalName(e.name.local);
+          return local == 'adresosobyfizycznej' ||
+              local == 'adresstalegopobytu' ||
+              local == 'adreszameldowania';
+        });
+
+    for (final XmlElement adres in adresElements) {
+      final String? href = adres.getAttribute('xlink:href');
+      final String? id = _stripHref(href);
+      if (id != null && id.isNotEmpty) {
+        result.add(id);
+      }
+    }
+    return result;
+  }
+
+  static List<String> _parseParcelAddressRefs(XmlElement element) {
+    final List<String> result = [];
+    final Iterable<XmlElement> adresElements = element.descendants
+        .whereType<XmlElement>()
+        .where((XmlElement e) {
+          final String local = _normalizeLocalName(e.name.local);
+          return local == 'adresdzialki';
+        });
+
+    for (final XmlElement adres in adresElements) {
+      final String? href = adres.getAttribute('xlink:href');
+      final String? id = _stripHref(href);
+      if (id != null && id.isNotEmpty) {
+        result.add(id);
+      }
+    }
+    return result;
+  }
+
+  static Map<String, dynamic>? _parseAdresStalegoPobytu(XmlElement element) {
+    final String? gmlId = element.getAttribute('gml:id');
+    if (gmlId == null) return null;
+
+    final String? kraj = _getElementText(element, 'kraj');
+    final String? miejscowosc =
+        _getElementText(element, 'miejscowosc') ??
+        _getElementText(element, 'nazwaMiejscowosci');
+    final String? kodPocztowy = _getElementText(element, 'kodPocztowy');
+    final String? ulica =
+        _getElementText(element, 'ulica') ??
+        _getElementText(element, 'nazwaUlicy');
+    final String? numerPorzadkowy = _getElementText(element, 'numerPorzadkowy');
+
+    return <String, dynamic>{
+      'gmlId': gmlId,
+      'kraj': kraj,
+      'miejscowosc': miejscowosc,
+      'kodPocztowy': kodPocztowy,
+      'ulica': ulica,
+      'numerPorzadkowy': numerPorzadkowy,
+    };
+  }
+
+  static Map<String, dynamic>? _parseAdresNieruchomosci(XmlElement element) {
+    final String? gmlId = element.getAttribute('gml:id');
+    if (gmlId == null) return null;
+
+    final String? kraj = _getElementText(element, 'kraj');
+    final String? miejscowosc =
+        _getElementText(element, 'nazwaMiejscowosci') ??
+        _getElementText(element, 'miejscowosc');
+    final String? kodPocztowy = _getElementText(element, 'kodPocztowy');
+    final String? ulica =
+        _getElementText(element, 'nazwaUlicy') ??
+        _getElementText(element, 'ulica');
+    final String? numerPorzadkowy = _getElementText(element, 'numerPorzadkowy');
+
+    return <String, dynamic>{
+      'gmlId': gmlId,
+      'kraj': kraj,
+      'miejscowosc': miejscowosc,
+      'kodPocztowy': kodPocztowy,
+      'ulica': ulica,
+      'numerPorzadkowy': numerPorzadkowy,
+    };
   }
 
   static String? _getElementText(XmlElement parent, String localName) {
@@ -627,4 +856,23 @@ class GmlService {
     if (href == null) return null;
     return href.startsWith('#') ? href.substring(1) : href;
   }
+}
+
+String _normalizeLocalName(String name) {
+  String result = name.toLowerCase();
+  const Map<String, String> replacements = <String, String>{
+    'ą': 'a',
+    'ć': 'c',
+    'ę': 'e',
+    'ł': 'l',
+    'ń': 'n',
+    'ó': 'o',
+    'ś': 's',
+    'ź': 'z',
+    'ż': 'z',
+  };
+  replacements.forEach((String from, String to) {
+    result = result.replaceAll(from, to);
+  });
+  return result;
 }
