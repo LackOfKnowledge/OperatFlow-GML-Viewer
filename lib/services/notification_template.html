@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: "Noto Sans", Arial, sans-serif; font-size: 12pt; line-height: 1.4; color: #111; margin: 0; padding: 32px; }
+    .row { display: flex; justify-content: space-between; }
+    .block { margin-bottom: 12px; }
+    .sender, .recipient { width: 45%; font-size: 11pt; }
+    .center { text-align: center; }
+    h1 { font-size: 16pt; margin: 16px 0 4px; }
+    h2 { font-size: 13pt; margin: 12px 0 6px; }
+    h3 { font-size: 12pt; margin: 10px 0 4px; }
+    strong { font-weight: bold; }
+    ul { margin: 6px 0 10px 20px; padding: 0; }
+    .footer { margin-top: 28px; }
+    .page-break { page-break-after: always; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <!-- Nagłówek: nadawca / adresat -->
+  <div class="row block">
+    <div class="sender">
+      <div><strong>{{senderCompany}}</strong></div>
+      <div>{{senderName}}</div>
+      <div>{{senderAddressLine1}}</div>
+      <div>{{senderAddressLine2}}</div>
+      <div>{{senderPhone}}</div>
+      <div class="muted">(nadawca)</div>
+    </div>
+    <div class="recipient">
+      <div><strong>{{recipientName}}</strong></div>
+      <div>{{recipientAddressLine1}}</div>
+      <div>{{recipientAddressLine2}}</div>
+      <div class="muted">(adresat)</div>
+    </div>
+  </div>
+
+  <div class="block" style="text-align: right;">
+    <div>{{documentPlace}}, dnia {{documentDate}}</div>
+    <div>ID: {{documentId}}</div>
+  </div>
+
+  <div class="center">
+    <h1>ZAWIADOMIENIE</h1>
+    <div style="font-size: 12pt; font-weight: bold;">
+      o {{notificationTitle}}
+    </div>
+  </div>
+
+  <div class="block">
+    <p>
+      Na podstawie art. 39 ust. 3 ustawy z dnia 17 maja 1989 r. Prawo geodezyjne i kartograficzne
+      (t.j. Dz. U. z 2021 r. poz. 1990) uprzejmie zawiadamiam, że w dniu
+      <strong>{{meetingDate}}</strong> o godzinie <strong>{{meetingTime}}</strong>
+      zostaną przeprowadzone czynności {{notificationType}} dotyczące granic nieruchomości
+      oznaczonej w ewidencji gruntów jako działka <strong>{{subjectParcelId}}</strong>,
+      położonej w obrębie <strong>{{obreb}}</strong>, gmina <strong>{{gmina}}</strong>,
+      powiat <strong>{{powiat}}</strong>, województwo <strong>{{wojewodztwo}}</strong>.
+    </p>
+    <p>
+      Miejsce spotkania: <strong>{{meetingPlace}}</strong>
+    </p>
+    <p>
+      Czynności prowadzone będą w obecności zainteresowanych stron. Prosimy o zabranie dokumentów
+      tożsamości oraz – w przypadku reprezentacji – stosownych pełnomocnictw.
+    </p>
+  </div>
+
+  <div class="block">
+    <h3>Działki objęte postępowaniem</h3>
+    <ul>
+      {{#parcels}}
+      <li>{{.}}</li>
+      {{/parcels}}
+    </ul>
+
+    <h3>Strony postępowania (właściciele/władający)</h3>
+    <ul>
+      {{#parties}}
+      <li>{{.}}</li>
+      {{/parties}}
+    </ul>
+  </div>
+
+  <div class="row block footer">
+    <div>
+      <div><strong>Geodeta Uprawniony</strong></div>
+      <div>{{surveyorName}}</div>
+      <div>upr. nr {{surveyorLicense}}</div>
+    </div>
+    <div style="text-align: right;">
+      <div>KERG: {{kergId}}</div>
+    </div>
+  </div>
+
+  <h2 class="center">POUCZENIE</h2>
+  <p>
+    Zawiadomieni właściciele (władający) gruntami proszeni są o przybycie w oznaczonym terminie
+    ze wszelkimi dokumentami, jakie mogą być potrzebne przy przyjmowaniu granic ich gruntów oraz
+    dokumentami tożsamości. W imieniu osób nieobecnych mogą występować odpowiednio upoważnieni
+    pełnomocnicy. W przypadku współwłasności, współużytkowania wieczystego, małżeńskiej wspólności
+    ustawowej – uczestnikami postępowania są wszystkie strony. Zgodnie z art. 39 ust.3 oraz art. 32 ust. 3
+    ustawy z dnia 17 maja 1989 r. Prawo geodezyjne i kartograficzne (t.j. Dz.U. 2021 poz. 1990)
+    nieusprawiedliwione niestawiennictwo stron nie wstrzymuje czynności geodety.
+  </p>
+
+  <div class="page-break"></div>
+
+  <h2 class="center">Klauzula informacyjna dotycząca przetwarzania danych osobowych</h2>
+  <ol>
+    <li>Administratorem danych jest {{rodoAdministrator}} ({{senderAddressLine1}}, {{senderAddressLine2}}).</li>
+    <li>Kontakt z inspektorem ochrony danych: {{rodoContact}}.</li>
+    <li>Dane osobowe przetwarzane są na podstawie art. 6 ust.1 ogólnego rozporządzenia o ochronie danych (RODO) w celu realizacji prac geodezyjnych KERG {{kergId}}.</li>
+    <li>Odbiorcami danych mogą być organy publiczne, jednostki lub inne podmioty uprawnione do ich pozyskania na podstawie przepisów prawa.</li>
+    <li>Dane będą przechowywane przez okres wymagany przepisami prawa.</li>
+    <li>Osobie, której dane dotyczą, przysługuje prawo dostępu do danych, ich sprostowania, usunięcia, ograniczenia przetwarzania, przenoszenia danych, wniesienia sprzeciwu oraz cofnięcia zgody.</li>
+    <li>Przysługuje prawo wniesienia skargi do Prezesa UODO w przypadku uznania, że przetwarzanie narusza przepisy RODO.</li>
+    <li>Podanie danych jest obowiązkowe w zakresie wynikającym z przepisów prawa; w pozostałym zakresie dobrowolne, lecz niezbędne do realizacji celu.</li>
+    <li>Dane nie będą podlegały profilowaniu ani zautomatyzowanemu podejmowaniu decyzji.</li>
+  </ol>
+</body>
+</html>
