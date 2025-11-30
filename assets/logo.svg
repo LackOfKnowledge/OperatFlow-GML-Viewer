@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" fill="none">
+  <!-- Zewnętrzny heksagon -->
+  <path
+    d="M28 4L50 17V39L28 52L6 39V17L28 4Z"
+    stroke="#0B1727"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Wewnętrzny heksagon (subtelne warstwy danych) -->
+  <path
+    d="M28 9L44 18V38L28 47L12 38V18L28 9Z"
+    stroke="#23A36E"
+    stroke-width="1.8"
+    opacity="0.42"
+    stroke-linejoin="round"
+  />
+
+  <!-- CHEVRON 1 -->
+  <path
+    d="M17 21.5L28 15.5L39 21.5"
+    stroke="#23A36E"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- CHEVRON 2 -->
+  <path
+    d="M17 28L28 22.8L39 28"
+    stroke="#23A36E"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.82"
+  />
+
+  <!-- CHEVRON 3 -->
+  <path
+    d="M17 34.5L28 30L39 34.5"
+    stroke="#23A36E"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.58"
+  />
+</svg>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gmlviewer/data/models/parcel.dart';
+import 'package:gmlviewer/presentation/theme/app_theme.dart';
 
 class ParcelGeometryPreview extends StatelessWidget {
   final Parcel parcel;
@@ -8,21 +9,23 @@ class ParcelGeometryPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     if (parcel.geometryPoints.isEmpty) {
       return Container(
         height: 200,
         width: double.infinity,
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade200),
+          color: AppColors.baseBackground,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.format_shapes, size: 48, color: Colors.grey.shade300),
+            const Icon(Icons.maps_ugc_outlined, size: 48, color: AppColors.border),
             const SizedBox(height: 8),
-            const Text('Brak geometrii', style: TextStyle(color: Colors.grey)),
+            Text('Brak geometrii', style: textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText)),
           ],
         ),
       );
@@ -32,16 +35,17 @@ class ParcelGeometryPreview extends StatelessWidget {
       height: 300,
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         child: CustomPaint(
           painter: GeometryPainter(
             points: parcel.geometryPoints,
-            color: const Color(0xFF3498DB),
+            strokeColor: AppColors.info,
+            fillColor: AppColors.info.withOpacity(0.1),
           ),
         ),
       ),
@@ -51,18 +55,23 @@ class ParcelGeometryPreview extends StatelessWidget {
 
 class GeometryPainter extends CustomPainter {
   final List<ParsedPoint> points;
-  final Color color;
+  final Color strokeColor;
+  final Color fillColor;
 
-  GeometryPainter({required this.points, required this.color});
+  GeometryPainter({required this.points, required this.strokeColor, required this.fillColor});
 
   @override
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty) return;
 
     final paintStroke = Paint()
-      ..color = color
+      ..color = strokeColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
+      
+    final paintFill = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
 
     double minX = double.infinity, maxX = double.negativeInfinity;
     double minY = double.infinity, maxY = double.negativeInfinity;
@@ -96,6 +105,8 @@ class GeometryPainter extends CustomPainter {
       path.lineTo(x, y);
     }
     path.close();
+    
+    canvas.drawPath(path, paintFill);
     canvas.drawPath(path, paintStroke);
   }
 

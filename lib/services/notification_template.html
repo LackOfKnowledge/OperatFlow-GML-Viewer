@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <!-- Nagłówek: nadawca / adresat -->
+  <!-- Nagłówek: nadawca / miejscowość -->
   <div class="row block">
     <div class="sender">
       <div><strong>{{senderCompany}}</strong></div>
@@ -30,16 +30,21 @@
       <div class="muted">(nadawca)</div>
     </div>
     <div class="recipient">
-      <div><strong>{{recipientName}}</strong></div>
-      <div>{{recipientAddressLine1}}</div>
-      <div>{{recipientAddressLine2}}</div>
-      <div class="muted">(adresat)</div>
+      <div style="text-align: right;">
+        <div>{{documentPlace}}, dnia {{documentDate}}</div>
+        <div>ID: {{documentId}}</div>
+      </div>
     </div>
   </div>
 
-  <div class="block" style="text-align: right;">
-    <div>{{documentPlace}}, dnia {{documentDate}}</div>
-    <div>ID: {{documentId}}</div>
+  <!-- Adresat -->
+  <div class="block">
+    <div class="recipient" style="width: 45%; margin-left: 55%; padding-top: 1em;">
+        <div><strong>{{recipientName}}</strong></div>
+        <div>{{recipientAddressLine1}}</div>
+        <div>{{recipientAddressLine2}}</div>
+        <div class="muted">(adresat)</div>
+    </div>
   </div>
 
   <div class="center">
@@ -57,7 +62,7 @@
       zostaną przeprowadzone czynności {{notificationType}} dotyczące granic nieruchomości
       oznaczonej w ewidencji gruntów jako działka <strong>{{subjectParcelId}}</strong>,
       położonej w obrębie <strong>{{obreb}}</strong>, gmina <strong>{{gmina}}</strong>,
-      powiat <strong>{{powiat}}</strong>, województwo <strong>{{wojewodztwo}}</strong>.
+      powiat <strong>{{powiat}}</strong>, województwo <strong>{{wojewodztwo}}</strong>{{#dzialkaPrzedmiotowa}}, sąsiadująca z działką <strong>{{dzialkaPrzedmiotowa}}</strong>{{/dzialkaPrzedmiotowa}}.
     </p>
     <p>
       Miejsce spotkania: <strong>{{meetingPlace}}</strong>
@@ -69,19 +74,11 @@
   </div>
 
   <div class="block">
-    <h3>Działki objęte postępowaniem</h3>
+    <h3>Działka przedmiotowa</h3>
     <ul>
-      {{#parcels}}
-      <li>{{.}}</li>
-      {{/parcels}}
+      <li><strong>{{subjectParcelId}}</strong></li>
     </ul>
 
-    <h3>Strony postępowania (właściciele/władający)</h3>
-    <ul>
-      {{#parties}}
-      <li>{{.}}</li>
-      {{/parties}}
-    </ul>
   </div>
 
   <div class="row block footer">
