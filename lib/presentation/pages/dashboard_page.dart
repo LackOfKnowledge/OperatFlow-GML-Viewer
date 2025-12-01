@@ -180,7 +180,7 @@ class _DashboardPageState extends State<DashboardPage> {
               onPressed: () {
                 final subjectParcel = parcel;
                 final neighborParcels = _selectedParcels.where((p) => p != subjectParcel).toList();
-                Navigator.of(context).pop(); // Close the dialog
+                Navigator.of(context).pop();
                 
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -204,7 +204,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA), // Jasnoszare tło dashboardu
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: Text(_fileName != null ? 'OperatFlow - $_fileName' : 'OperatFlow GML Viewer'),
         backgroundColor: const Color(0xFF2C3E50),

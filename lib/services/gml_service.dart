@@ -368,7 +368,6 @@ class GmlService {
     });
   }
 
-  // --- Metody dostępowe (API dla UI) ---
 
   List<MapEntry<OwnershipShare, Subject?>> getSubjectsForParcel(Parcel parcel) {
     if (parcel.jrgId == null) return [];
@@ -394,7 +393,42 @@ class GmlService {
     return subjectAddresses[subject.gmlId] ?? [];
   }
 
-  // --- Parsery XML (prywatne, statyczne) ---
+  List<MapEntry<OwnershipShare, Subject?>> getSubjectsForParcels(
+      List<Parcel> parcels) {
+    final Set<String> jrgIds =
+        parcels.map((p) => p.jrgId).whereType<String>().toSet();
+    final List<OwnershipShare> allShares =
+        jrgIds.map((id) => sharesByJrgId[id] ?? []).expand((list) => list).toList();
+
+    final Map<String, MapEntry<OwnershipShare, Subject?>> uniqueSubjects = {};
+    for (var share in allShares) {
+      final subject =
+          share.subjectId != null ? subjects[share.subjectId!] : null;
+      if (subject != null && !uniqueSubjects.containsKey(subject.gmlId)) {
+        uniqueSubjects[subject.gmlId] = MapEntry(share, subject);
+      }
+    }
+    return uniqueSubjects.values.toList();
+  }
+
+  List<Parcel> getParcelsForSubject(Subject subject) {
+    List<Parcel> subjectParcels = [];
+    final List<String> jrgIds = [];
+    sharesByJrgId.forEach((jrgId, shares) {
+      if (shares.any((share) => share.subjectId == subject.gmlId)) {
+        jrgIds.add(jrgId);
+      }
+    });
+
+    for (var parcel in parcels) {
+      if (parcel.jrgId != null && jrgIds.contains(parcel.jrgId)) {
+        subjectParcels.add(parcel);
+      }
+    }
+    return subjectParcels;
+  }
+
+
 
   static Map<String, dynamic>? _parseParcel(XmlElement element) {
     final gmlId = element.getAttribute('gml:id');

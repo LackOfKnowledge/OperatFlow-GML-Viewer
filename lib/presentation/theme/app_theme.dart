@@ -49,7 +49,7 @@ class AppTheme {
       ),
       textTheme: textTheme,
       
-      // 3. Komponenty (Component Styles)
+      // 3. Komponenty
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.primaryText,

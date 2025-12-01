@@ -6,20 +6,37 @@ import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+// import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
-import '../../data/models/parcel.dart';
+import 'package:gmlviewer/data/models/parcel.dart';
 import '../../data/models/address.dart';
+import '../../services/auth_service.dart';
+import '../../services/company_defaults_service.dart';
 import '../../services/gml_service.dart';
 import '../../services/parcel_report_service.dart';
-import '../../services/company_defaults_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/widgets/parcel_geometry_preview.dart';
 import 'notification_form_page.dart';
 
 class HomePage extends StatefulWidget {
   final String? initialFilePath;
-  const HomePage({super.key, this.initialFilePath});
+  final LicenseInfo? licenseInfo;
+  final bool licenseLoading;
+  final String? licenseError;
+  final VoidCallback onSignOut;
+  final VoidCallback? onRefreshLicense;
+  final String userEmail;
+
+  const HomePage({
+    super.key,
+    this.initialFilePath,
+    required this.licenseInfo,
+    required this.licenseLoading,
+    required this.onSignOut,
+    this.onRefreshLicense,
+    this.licenseError,
+    required this.userEmail,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -38,6 +55,10 @@ class _HomePageState extends State<HomePage> {
   
   StreamSubscription? _intentDataStreamSubscription;
 
+  bool get _hasPaidAccess => widget.licenseInfo?.isActive ?? false;
+  String get _licenseLabel =>
+      widget.licenseInfo != null ? widget.licenseInfo!.label : 'Brak licencji';
+
   @override
   void initState() {
     super.initState();
@@ -54,11 +75,11 @@ class _HomePageState extends State<HomePage> {
         _loadFileFromPath(widget.initialFilePath!);
       }
 
-      _intentDataStreamSubscription = ReceiveSharingIntent.instance.getMediaStream().listen((List<SharedMediaFile> value) {
-        if (value.isNotEmpty) {
-          _loadFileFromPath(value.first.path);
-        }
-      });
+      // _intentDataStreamSubscription = ReceiveSharingIntent.getMediaStream().listen((List<SharedMediaFile> value) {
+      //   if (value.isNotEmpty) {
+      //     _loadFileFromPath(value.first.path);
+      //   }
+      // });
     }
   }
 
@@ -113,6 +134,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _exportSelectedParcels() async {
+    if (!_hasPaidAccess) {
+      _showLicenseRequired();
+      return;
+    }
+
     if (_selectedParcels.isEmpty) return;
     try {
       final pdfBytes = await _reportService.generatePdfBytes(_selectedParcels);
@@ -150,6 +176,15 @@ class _HomePageState extends State<HomePage> {
       SnackBar(
         content: Text(message), 
         backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+
+  void _showLicenseRequired() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Ta funkcja jest dostępna tylko z aktywną licencją.'),
+        duration: Duration(seconds: 3),
       ),
     );
   }
@@ -264,11 +299,17 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.notification_add_outlined),
               tooltip: 'Stwórz zawiadomienia dla zaznaczonych działek',
               onPressed: () {
+                if (!_hasPaidAccess) {
+                  _showLicenseRequired();
+                  return;
+                }
                 showDialog(
                   context: context,
                   builder: (_) => NotificationFormPage(
                     parcels: _selectedParcels,
                     gmlService: _gmlService,
+                    isLicensed: _hasPaidAccess,
+                    onLicenseBlocked: _showLicenseRequired,
                   ),
                 );
               },
@@ -279,32 +320,155 @@ class _HomePageState extends State<HomePage> {
             onPressed: _pickAndParseGml,
             tooltip: 'Otwórz plik GML',
           ),
+          PopupMenuButton<String>(
+            tooltip: 'Konto',
+            icon: const Icon(Icons.person_outline),
+            onSelected: (value) {
+              if (value == 'refresh') {
+                widget.onRefreshLicense?.call();
+              } else if (value == 'logout') {
+                widget.onSignOut();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.userEmail.isEmpty ? 'Zalogowany użytkownik' : widget.userEmail,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Licencja: $_licenseLabel', style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(height: 8),
+              const PopupMenuItem<String>(
+                value: 'refresh',
+                child: Text('Odśwież licencję'),
+              ),
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Text('Wyloguj'),
+              ),
+            ],
+          ),
           const SizedBox(width: 8),
         ],
       ),
-      body: DropTarget(
-        onDragEntered: (_) => setState(() => _isDragging = true),
-        onDragExited: (_) => setState(() => _isDragging = false),
-        onDragDone: _handleDrop,
-        child: Stack(
-          fit: StackFit.expand,
+      body: Column(
+        children: [
+          if (widget.licenseLoading) const LinearProgressIndicator(minHeight: 2),
+          _buildLicenseBanner(),
+          Expanded(
+            child: DropTarget(
+              onDragEntered: (_) => setState(() => _isDragging = true),
+              onDragExited: (_) => setState(() => _isDragging = false),
+              onDragDone: _handleDrop,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (_isLoading)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_gmlService.parcels.isEmpty)
+                    _buildEmptyState()
+                  else
+                    _buildContentLayout(),
+                    
+                  if (_isDragging)
+                    Container(
+                      color: AppColors.info.withOpacity(0.1),
+                      child: const Center(
+                        child: Icon(Icons.cloud_upload_outlined, size: 100, color: AppColors.info),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLicenseBanner() {
+    final textTheme = Theme.of(context).textTheme;
+    if (widget.licenseLoading && widget.licenseInfo == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: AppColors.baseBackground,
+        child: Row(
           children: [
-            if (_isLoading)
-              const Center(child: CircularProgressIndicator())
-            else if (_gmlService.parcels.isEmpty)
-              _buildEmptyState()
-            else
-              _buildContentLayout(),
-              
-            if (_isDragging)
-              Container(
-                color: AppColors.info.withOpacity(0.1),
-                child: const Center(
-                  child: Icon(Icons.cloud_upload_outlined, size: 100, color: AppColors.info),
-                ),
+            const SizedBox(
+              height: 16,
+              width: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Sprawdzam status licencji...',
+              style: textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_hasPaidAccess) {
+      final label = widget.licenseInfo?.plan ?? _licenseLabel;
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: AppColors.baseBackground,
+        child: Row(
+          children: [
+            const Icon(Icons.verified_outlined, color: AppColors.success),
+            const SizedBox(width: 8),
+            Text(
+              'Licencja aktywna',
+              style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 8),
+            Text(label, style: textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+            const Spacer(),
+            if (widget.onRefreshLicense != null)
+              TextButton.icon(
+                onPressed: widget.onRefreshLicense,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Odśwież'),
               ),
           ],
         ),
+      );
+    }
+
+    final message = widget.licenseError ??
+        'Brak aktywnej licencji. Dostęp tylko do podglądu danych GML.';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: AppColors.warning.withOpacity(0.08),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_outline, color: AppColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: textTheme.bodySmall?.copyWith(color: AppColors.warning),
+            ),
+          ),
+          if (widget.onRefreshLicense != null)
+            TextButton(
+              onPressed: widget.onRefreshLicense,
+              child: const Text('Odśwież licencję'),
+            ),
+        ],
       ),
     );
   }
