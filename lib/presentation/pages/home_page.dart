@@ -6,8 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:open_filex/open_filex.dart';
-// import 'package:receive_sharing_intent/receive_sharing_intent.dart';
-
 import 'package:gmlviewer/data/models/parcel.dart';
 import '../../data/models/address.dart';
 import '../../services/auth_service.dart';

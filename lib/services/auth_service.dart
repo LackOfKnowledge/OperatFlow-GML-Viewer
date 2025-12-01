@@ -1,6 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Holds current license information for a user fetched from Supabase.
 class LicenseInfo {
   final String status;
   final String? plan;
@@ -41,9 +40,7 @@ class LicenseInfo {
   }
 }
 
-/// Service wrapper around Supabase auth/licensing.
 class AuthService {
-  // Supabase project credentials (anon key only, never embed the service role key).
   static const String supabaseUrl = 'https://addchmpbmqzbhpjzxaes.supabase.co';
   static const String supabaseAnonKey =
       'sb_publishable_Bq9GojD8RBTf3WGyAmIX1A_bSN7ts85';
