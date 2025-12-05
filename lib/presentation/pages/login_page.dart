@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/auth_service.dart';
+import '../../services/local_storage.dart' as OfStorage;
 import '../theme/app_theme.dart';
 
 class LoginPage extends StatefulWidget {
@@ -22,12 +23,30 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _isLoading = false;
   String? _errorMessage;
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillSavedCredentials();
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _prefillSavedCredentials() async {
+    final creds = await OfStorage.LocalStorage.loadCredentials();
+    if (creds != null) {
+      setState(() {
+        _emailController.text = creds['email'] ?? '';
+        _passwordController.text = creds['password'] ?? '';
+        _rememberMe = true;
+      });
+    }
   }
 
   Future<void> _handleSignIn() async {
@@ -41,11 +60,19 @@ class _LoginPageState extends State<LoginPage> {
         _emailController.text.trim(),
         _passwordController.text,
       );
+      if (_rememberMe) {
+        await OfStorage.LocalStorage.saveCredentials(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+      } else {
+        await OfStorage.LocalStorage.clearCredentials();
+      }
       await widget.onSignedIn();
     } on AuthException catch (e) {
       setState(() => _errorMessage = e.message);
     } catch (_) {
-      setState(() => _errorMessage = 'Logowanie nie powiodło się. Spróbuj ponownie.');
+      setState(() => _errorMessage = 'Logowanie nie powiodlo sie. Sprobuj ponownie.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -57,7 +84,7 @@ class _LoginPageState extends State<LoginPage> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      setState(() => _errorMessage = 'Nie udało się otworzyć strony rejestracji.');
+      setState(() => _errorMessage = 'Nie udalo sie otworzyc strony rejestracji.');
     }
   }
 
@@ -81,10 +108,10 @@ class _LoginPageState extends State<LoginPage> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Zaloguj się', style: textTheme.headlineSmall),
+                      Text('Zaloguj sie', style: textTheme.headlineSmall),
                       const SizedBox(height: 8),
                       Text(
-                        'Dostęp do OperatFlow po rejestracji i zalogowaniu.',
+                        'Dostep do OperatFlow po rejestracji i zalogowaniu.',
                         style: textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
                       ),
                       const SizedBox(height: 24),
@@ -101,7 +128,7 @@ class _LoginPageState extends State<LoginPage> {
                             return 'Wpisz email';
                           }
                           if (!value.contains('@')) {
-                            return 'Nieprawidłowy adres email';
+                            return 'Nieprawidlowy adres email';
                           }
                           return null;
                         },
@@ -110,15 +137,26 @@ class _LoginPageState extends State<LoginPage> {
                       TextFormField(
                         controller: _passwordController,
                         decoration: const InputDecoration(
-                          labelText: 'Hasło',
+                          labelText: 'Haslo',
                           prefixIcon: Icon(Icons.lock_outline),
                         ),
                         obscureText: true,
                         autofillHints: const [AutofillHints.password],
-                        validator: (value) =>
-                            (value == null || value.isEmpty) ? 'Wpisz hasło' : null,
+                        validator: (value) => (value == null || value.isEmpty) ? 'Wpisz haslo' : null,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _rememberMe,
+                            onChanged: _isLoading
+                                ? null
+                                : (val) => setState(() => _rememberMe = val ?? false),
+                          ),
+                          const Text('Zapamietaj dane logowania'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       if (_errorMessage != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
@@ -145,7 +183,7 @@ class _LoginPageState extends State<LoginPage> {
                         width: double.infinity,
                         child: OutlinedButton(
                           onPressed: _isLoading ? null : _openRegister,
-                          child: const Text('Zarejestruj się'),
+                          child: const Text('Zarejestruj sie'),
                         ),
                       ),
                     ],

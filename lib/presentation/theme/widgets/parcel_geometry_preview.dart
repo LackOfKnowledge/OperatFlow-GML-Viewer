@@ -1,11 +1,12 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:gmlviewer/data/models/parcel.dart';
 import 'package:gmlviewer/presentation/theme/app_theme.dart';
 
 class ParcelGeometryPreview extends StatelessWidget {
   final Parcel parcel;
+  final double? height;
 
-  const ParcelGeometryPreview({super.key, required this.parcel});
+  const ParcelGeometryPreview({super.key, required this.parcel, this.height});
 
   @override
   Widget build(BuildContext context) {
@@ -32,22 +33,28 @@ class ParcelGeometryPreview extends StatelessWidget {
     }
 
     return Container(
-      height: 300,
+      constraints: const BoxConstraints(minHeight: 140),
+      height: height ?? 220,
       width: double.infinity,
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: CustomPaint(
-          painter: GeometryPainter(
-            points: parcel.geometryPoints,
-            strokeColor: AppColors.info,
-            fillColor: AppColors.info.withOpacity(0.1),
-          ),
-        ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: CustomPaint(
+              size: Size(constraints.maxWidth, constraints.maxHeight),
+              painter: GeometryPainter(
+                points: parcel.geometryPoints,
+                strokeColor: AppColors.info,
+                fillColor: AppColors.info.withOpacity(0.1),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -68,7 +75,7 @@ class GeometryPainter extends CustomPainter {
       ..color = strokeColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
-      
+
     final paintFill = Paint()
       ..color = fillColor
       ..style = PaintingStyle.fill;
@@ -82,7 +89,7 @@ class GeometryPainter extends CustomPainter {
       if (p.x < minY) minY = p.x;
       if (p.x > maxY) maxY = p.x;
     }
-    
+
     final w = maxX - minX;
     final h = maxY - minY;
     if (w == 0 || h == 0) return;
@@ -105,7 +112,7 @@ class GeometryPainter extends CustomPainter {
       path.lineTo(x, y);
     }
     path.close();
-    
+
     canvas.drawPath(path, paintFill);
     canvas.drawPath(path, paintStroke);
   }

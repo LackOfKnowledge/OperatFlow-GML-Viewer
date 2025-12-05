@@ -10,7 +10,8 @@ import '../../data/models/parcel.dart';
 import '../../data/models/boundary_point.dart';
 import '../../data/models/subject.dart';
 import '../../data/models/ownership_share.dart';
-import '../widgets/parcel_geometry_preview.dart';
+import '../theme/widgets/parcel_geometry_preview.dart';
+import '../theme/widgets/parcel_details_panel.dart';
 import 'notification_form_page.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -28,6 +29,7 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _isLoading = false;
   String? _fileName;
   bool _isDragging = false;
+  ParcelDetailView _detailView = ParcelDetailView.parcel;
 
   @override
   void initState() {
@@ -94,10 +96,12 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               ListTile(
                 leading: const Icon(Icons.description),
-                title: const Text('Informacje o działkach'),
+                title: const Text('Informacje o dzialkach'),
                 onTap: () {
                   Navigator.of(context).pop();
-                  _printParcelInfo();
+                  _askReportMode().then((mode) {
+                    if (mode != null) _printParcelInfo(mode);
+                  });
                 },
               ),
               ListTile(
@@ -115,14 +119,36 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  void _printParcelInfo() {
+  Future<ParcelReportMode?> _askReportMode() async {
+    return showDialog<ParcelReportMode>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Wybierz rodzaj raportu'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Dane dzialki (pelne)'),
+              onTap: () => Navigator.of(ctx).pop(ParcelReportMode.full),
+            ),
+            ListTile(
+              title: const Text('Wypis graficzny'),
+              onTap: () => Navigator.of(ctx).pop(ParcelReportMode.graphic),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _printParcelInfo(ParcelReportMode mode) {
     if (_selectedParcels.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nie wybrano żadnych działek.')),
       );
       return;
     }
-    _reportService.printParcels(_selectedParcels.toList());
+    _reportService.printParcels(_selectedParcels.toList(), mode: mode);
   }
 
   void _showNotificationTypeDialog() {
@@ -270,10 +296,10 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     ),
                   ),
-                  // PRAWA KOLUMNA - SZCZEGÓŁY
+                  // PRAWA KOLUMNA - SZCZEGOLY
                   Expanded(
                     child: _lastSelectedParcel == null
-                        ? const Center(child: Text("Wybierz działkę z listy"))
+                        ? const Center(child: Text("Wybierz dzialke z listy"))
                         : SelectionArea(
                             child: SingleChildScrollView(
                               padding: const EdgeInsets.all(24),
@@ -285,22 +311,52 @@ class _DashboardPageState extends State<DashboardPage> {
                                   Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Expanded(flex: 3, child: _buildMainInfo()),
+                                      Expanded(
+                                        flex: 3,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: ParcelDetailView.values.map((v) {
+                                                final selected = _detailView == v;
+                                                final label = {
+                                                  ParcelDetailView.parcel: 'Dzialka',
+                                                  ParcelDetailView.parties: 'Podmioty, adresy i udzialy',
+                                                  ParcelDetailView.points: 'Punkty graniczne',
+                                                  ParcelDetailView.buildings: 'Budynki',
+                                                }[v]!;
+                                                return ChoiceChip(
+                                                  label: Padding(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    child: Text(label),
+                                                  ),
+                                                  selected: selected,
+                                                  onSelected: (_) => setState(() => _detailView = v),
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                                );
+                                              }).toList(),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            ParcelDetailsPanel(
+                                              parcel: _lastSelectedParcel!,
+                                              gmlService: _gmlService,
+                                              view: _detailView,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                       const SizedBox(width: 24),
-                                      Expanded(flex: 2, child: ParcelGeometryPreview(parcel: _lastSelectedParcel!)),
+                                      Expanded(flex: 2, child: ParcelGeometryPreview(parcel: _lastSelectedParcel!, height: 200)),
                                     ],
                                   ),
-                                  const SizedBox(height: 24),
-                                  _buildOwnersSection(),
-                                  const SizedBox(height: 24),
-                                  _buildPointsSection(),
                                 ],
                               ),
                             ),
                           ),
                   ),
-                ],
-              ),
+
               
             if (_isDragging)
               Container(

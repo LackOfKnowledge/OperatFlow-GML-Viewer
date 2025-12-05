@@ -7,6 +7,7 @@ import 'presentation/pages/home_page.dart';
 import 'presentation/pages/login_page.dart';
 import 'presentation/theme/app_theme.dart';
 import 'services/auth_service.dart';
+import 'services/local_storage.dart' as OfStorage;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +56,8 @@ class _AuthGateState extends State<AuthGate> {
   bool _licenseLoading = false;
   bool _initializing = true;
   String? _licenseError;
+  Timer? _logoutTimer;
+  DateTime? _loginAt;
 
   @override
   void initState() {
@@ -68,17 +71,28 @@ class _AuthGateState extends State<AuthGate> {
         _licenseError = null;
       });
       if (session != null) {
+        _recordLoginTime();
         _loadLicense(session.user.id);
+        _startLogoutTimer();
       }
     });
   }
 
   Future<void> _bootstrap() async {
     final currentSession = _authService.client.auth.currentSession;
-    setState(() => _session = currentSession);
+    final storedLogin = await OfStorage.LocalStorage.loadLoginTimestamp();
+    setState(() {
+      _session = currentSession;
+      _loginAt = storedLogin;
+    });
 
     if (currentSession != null) {
-      await _loadLicense(currentSession.user.id);
+      if (_isSessionExpired()) {
+        await _handleSignOut();
+      } else {
+        await _loadLicense(currentSession.user.id);
+        _startLogoutTimer();
+      }
     }
 
     if (mounted) {
@@ -105,11 +119,15 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _handleSignOut() async {
     await _authService.signOut();
+    _logoutTimer?.cancel();
+    _logoutTimer = null;
+    await OfStorage.LocalStorage.clearSessionInfo();
     if (mounted) {
       setState(() {
         _license = null;
         _licenseError = null;
         _session = null;
+        _loginAt = null;
       });
     }
   }
@@ -119,13 +137,39 @@ class _AuthGateState extends State<AuthGate> {
     if (mounted) setState(() => _session = currentSession);
 
     if (currentSession != null) {
+      _recordLoginTime();
+      _startLogoutTimer();
       await _loadLicense(currentSession.user.id);
     }
+  }
+
+  void _recordLoginTime() {
+    final now = DateTime.now().toUtc();
+    _loginAt = now;
+    OfStorage.LocalStorage.saveLoginTimestamp(now);
+  }
+
+  bool _isSessionExpired() {
+    if (_loginAt == null) return false;
+    final now = DateTime.now().toUtc();
+    return now.difference(_loginAt!).inHours >= 8;
+  }
+
+  void _startLogoutTimer() {
+    _logoutTimer?.cancel();
+    final now = DateTime.now().toUtc();
+    final start = _loginAt ?? now;
+    final remaining = Duration(hours: 8) - now.difference(start);
+    final effective = remaining.isNegative ? Duration.zero : remaining;
+    _logoutTimer = Timer(effective, () async {
+      await _handleSignOut();
+    });
   }
 
   @override
   void dispose() {
     _authSub?.cancel();
+    _logoutTimer?.cancel();
     super.dispose();
   }
 

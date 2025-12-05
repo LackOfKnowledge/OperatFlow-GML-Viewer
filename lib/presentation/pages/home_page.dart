@@ -14,6 +14,7 @@ import '../../services/gml_service.dart';
 import '../../services/parcel_report_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/widgets/parcel_geometry_preview.dart';
+import '../theme/widgets/parcel_details_panel.dart';
 import 'notification_form_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -50,6 +51,7 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = false;
   String? _fileName;
   bool _isDragging = false;
+  ParcelDetailView _detailView = ParcelDetailView.parcel;
   
   StreamSubscription? _intentDataStreamSubscription;
 
@@ -131,6 +133,30 @@ class _HomePageState extends State<HomePage> {
     await _loadFileFromPath(details.files.first.path);
   }
 
+  Future<ParcelReportMode?> _askReportMode() async {
+    return showDialog<ParcelReportMode>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Wybierz rodzaj raportu"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Dane dzialki (pelne)'),
+              subtitle: const Text('Atrybuty, uzytki, wlasciciele, adresy, budynki/lokale, podstawy prawne'),
+              onTap: () => Navigator.of(ctx).pop(ParcelReportMode.full),
+            ),
+            ListTile(
+              title: const Text('Wypis graficzny'),
+              subtitle: const Text('Geometria i punkty graniczne z atrybutami'),
+              onTap: () => Navigator.of(ctx).pop(ParcelReportMode.graphic),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _exportSelectedParcels() async {
     if (!_hasPaidAccess) {
       _showLicenseRequired();
@@ -138,9 +164,11 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (_selectedParcels.isEmpty) return;
+    final mode = await _askReportMode();
+    if (mode == null) return;
     try {
-      final pdfBytes = await _reportService.generatePdfBytes(_selectedParcels);
-      final fileName = 'OperatFlow - Raport z ${_selectedParcels.length} działek.pdf';
+      final pdfBytes = await _reportService.generatePdfBytes(_selectedParcels, mode: mode);
+      final fileName = 'OperatFlow - Raport ' + mode.name + ' z ' + _selectedParcels.length.toString() + ' dzialek.pdf';
       
       final String? outputPath = await FilePicker.platform.saveFile(
         dialogTitle: 'Zapisz raport PDF',
@@ -155,9 +183,9 @@ class _HomePageState extends State<HomePage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Raport zapisano w: $finalPath'),
+              content: Text('Raport zapisano w: ' + finalPath),
               action: SnackBarAction(
-                label: 'Otwórz',
+                label: 'Otworz',
                 onPressed: () => OpenFilex.open(finalPath),
               ),
             ),
@@ -165,7 +193,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
     } catch (e) {
-      _showError('Błąd eksportu PDF: $e');
+      _showError('Blad eksportu PDF: ' + e.toString());
     }
   }
 
@@ -185,6 +213,17 @@ class _HomePageState extends State<HomePage> {
         duration: Duration(seconds: 3),
       ),
     );
+  }
+
+  String _formatObreb(Parcel parcel) {
+    final reg = RegExp(r'^\\d+_\\d\\.(\\d{4})');
+    final match = reg.firstMatch(parcel.idDzialki);
+    final obrebNumber = match != null ? match.group(1) : parcel.obrebId ?? '-';
+    final name = parcel.obrebNazwa ?? '';
+    if (name.isNotEmpty) {
+      return '$name ${obrebNumber ?? ''}'.trim();
+    }
+    return obrebNumber ?? '-';
   }
 
   Future<void> _openDefaultsEditor() async {
@@ -510,7 +549,7 @@ class _HomePageState extends State<HomePage> {
                       const Icon(Icons.list_alt_outlined, size: 20, color: AppColors.secondaryText),
                       const SizedBox(width: 8),
                       Text(
-                        'DZIAŁKI (${_gmlService.parcels.length})',
+                        'DZIALKI (${_gmlService.parcels.length})',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w600,
                           letterSpacing: 1.1,
@@ -528,51 +567,82 @@ class _HomePageState extends State<HomePage> {
         ),
         Expanded(
           child: _activeParcel == null
-                  ? Center(child: Text('Wybierz działkę, aby wyświetlić szczegóły', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText)))
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
+              ? Center(
+                  child: Text(
+                    'Wybierz dzialke, aby wyswietlic szczegoly',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Dzialka ${_activeParcel!.numerDzialki}',
-                                      style: Theme.of(context).textTheme.headlineSmall,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Obręb: ${_activeParcel!.obrebNazwa ?? '-'} [${_activeParcel!.obrebId ?? '-'}]',
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    if (_selectedParcels.isNotEmpty)
-                                      Text('Zaznaczone do raportu: ${_selectedParcels.length}', style: Theme.of(context).textTheme.bodySmall),
-                                    const SizedBox(height: 24),
-                                    _buildMainInfo(_activeParcel!),
-                                  ],
+                          Expanded(
+                            flex: 3,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Dzialka ${_activeParcel!.numerDzialki}',
+                                  style: Theme.of(context).textTheme.headlineSmall,
                                 ),
-                              ),
-                              const SizedBox(width: 24),
-                              Expanded(
-                                flex: 2,
-                                child: ParcelGeometryPreview(parcel: _activeParcel!),
-                              ),
-                            ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Obreb: ${_formatObreb(_activeParcel!)}',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
+                                ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: ParcelDetailView.values.map((v) {
+                                    final selected = _detailView == v;
+                                    final label = {
+                                      ParcelDetailView.parcel: 'Dzialka',
+                                      ParcelDetailView.parties: 'Podmioty, adresy i udzialy',
+                                      ParcelDetailView.points: 'Punkty graniczne',
+                                      ParcelDetailView.buildings: 'Budynki',
+                                    }[v]!;
+                                    return ChoiceChip(
+                                      label: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        child: Text(label),
+                                      ),
+                                      selected: selected,
+                                      onSelected: (_) => setState(() => _detailView = v),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 16),
+                                if (_selectedParcels.isNotEmpty)
+                                  Text(
+                                    'Zaznaczone do raportu: ${_selectedParcels.length}',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                const SizedBox(height: 16),
+                                ParcelDetailsPanel(
+                                  parcel: _activeParcel!,
+                                  gmlService: _gmlService,
+                                  view: _detailView,
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 32),
-                          _buildOwnersSection(_activeParcel!),
-                          const SizedBox(height: 32),
-                          _buildPointsSection(_activeParcel!),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            flex: 2,
+                            child: ParcelGeometryPreview(parcel: _activeParcel!, height: 200),
+                          ),
                         ],
                       ),
-                    ),
+                    ],
+                  ),
+                ),
         ),
       ],
     );

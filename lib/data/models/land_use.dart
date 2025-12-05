@@ -1,14 +1,22 @@
 class LandUse {
   final String ofu;
   final String ozu;
+  final String? ofuLabel;
+  final String? ozuLabel;
   final String? ozk;
+  final String? ozkLabel;
   final double? powierzchnia;
+  final Map<String, String> extraAttributes;
 
   LandUse({
-    required this.ofu, 
-    required this.ozu, 
-    this.ozk, 
-    this.powierzchnia
+    required this.ofu,
+    required this.ozu,
+    this.ofuLabel,
+    this.ozuLabel,
+    this.ozk,
+    this.ozkLabel,
+    this.powierzchnia,
+    this.extraAttributes = const {},
   });
 
   @override

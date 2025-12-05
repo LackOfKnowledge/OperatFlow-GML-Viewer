@@ -5,6 +5,14 @@ class Address {
   final String? kodPocztowy;
   final String? ulica;
   final String? numerPorzadkowy;
+  final String? rodzajAdresuCode;
+  final String? rodzajAdresuLabel;
+  final String? wojewodztwoTeryt;
+  final String? powiatTeryt;
+  final String? gminaTeryt;
+  final String? miejscowoscTeryt;
+  final String? ulicaTeryt;
+  final Map<String, String> extraAttributes;
 
   Address({
     required this.gmlId,
@@ -13,6 +21,14 @@ class Address {
     this.kodPocztowy,
     this.ulica,
     this.numerPorzadkowy,
+    this.rodzajAdresuCode,
+    this.rodzajAdresuLabel,
+    this.wojewodztwoTeryt,
+    this.powiatTeryt,
+    this.gminaTeryt,
+    this.miejscowoscTeryt,
+    this.ulicaTeryt,
+    this.extraAttributes = const {},
   });
 
   String toSingleLine() {

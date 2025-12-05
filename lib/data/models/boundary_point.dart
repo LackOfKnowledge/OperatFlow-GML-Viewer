@@ -4,10 +4,17 @@ class BoundaryPoint {
   final String? numer;
   final String? x;
   final String? y;
-  final String? isd;
-  final String? stb;
-  final String? spd;
+  // SPD (sposób pozyskania punktu) kod + etykieta
+  final String? spdCode;
+  final String? spdLabel;
+  // ISD/ISD (spełnienie warunków dokładności) kod + etykieta
+  final String? isdCode;
+  final String? isdLabel;
+  // STB (rodzaj stabilizacji) kod + etykieta
+  final String? stbCode;
+  final String? stbLabel;
   final String? operat;
+  final Map<String, String> extraAttributes;
 
   BoundaryPoint({
     required this.gmlId,
@@ -15,12 +22,20 @@ class BoundaryPoint {
     this.numer,
     this.x,
     this.y,
-    this.isd,
-    this.stb,
-    this.spd,
+    this.spdCode,
+    this.spdLabel,
+    this.isdCode,
+    this.isdLabel,
+    this.stbCode,
+    this.stbLabel,
     this.operat,
+    this.extraAttributes = const {},
   });
 
   String get displayNumer => numer ?? '-';
   String get displayFullId => pelneId;
+  // Zachowanie kompatybilności z wcześniejszymi polami.
+  String? get spd => spdLabel ?? spdCode;
+  String? get isd => isdLabel ?? isdCode;
+  String? get stb => stbLabel ?? stbCode;
 }

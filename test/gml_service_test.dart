@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:gmlviewer/gml_service.dart';
+import 'package:gmlviewer/services/gml_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

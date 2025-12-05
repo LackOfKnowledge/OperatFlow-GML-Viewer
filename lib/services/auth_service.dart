@@ -48,7 +48,14 @@ class AuthService {
   final SupabaseClient client = Supabase.instance.client;
 
   static Future<void> initialize() async {
-    await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+    await Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+      // Supabase Flutter 2.x: domyślny storage + autoRefresh na kliencie Flutter.
+      authOptions: const FlutterAuthClientOptions(
+        autoRefreshToken: true,
+      ),
+    );
   }
 
   Future<AuthResponse> signIn(String email, String password) {

@@ -109,6 +109,7 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.surface,
         floatingLabelStyle: const TextStyle(color: AppColors.infoAlpha),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
           borderSide: const BorderSide(color: AppColors.inputBorder),
