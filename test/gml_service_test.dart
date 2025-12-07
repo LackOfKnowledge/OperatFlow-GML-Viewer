@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:gmlviewer/services/gml_service.dart';
+import 'package:gmlviewer/repositories/gml_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -12,7 +12,7 @@ void main() {
     final file = File('test/sample.gml');
     final Uint8List bytes = await file.readAsBytes();
 
-    final service = GmlService();
+    final service = GmlRepository();
     await service.parseGml(bytes);
 
     expect(service.parcels.length, 1);
@@ -38,7 +38,7 @@ void main() {
     final file = File('test/sample_v2.gml');
     final Uint8List bytes = await file.readAsBytes();
 
-    final service = GmlService();
+    final service = GmlRepository();
     await service.parseGml(bytes);
 
     expect(service.parcels.length, 1);

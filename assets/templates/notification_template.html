@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: "Noto Sans", Arial, sans-serif; color: #0f172a; margin: 32px; line-height: 1.45; font-size: 13px; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; }
+    .block { margin-bottom: 14px; }
+    .sender, .recipient { width: 45%; font-size: 12px; }
+    .center { text-align: center; }
+    h1 { font-size: 17px; margin: 18px 0 4px; letter-spacing: 1.5px; }
+    h2 { font-size: 14px; margin: 0 0 18px; }
+    h3 { font-size: 13px; margin: 14px 0 6px; }
+    strong { font-weight: 700; }
+    ul { margin: 6px 0 10px 18px; padding: 0; }
+    .muted { color: #525f70; font-size: 12px; }
+    .page-break { page-break-after: always; }
+    .underline { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="row block">
+    <div class="sender">
+      <div><strong>{{senderCompany}}</strong></div>
+      <div>{{senderName}}</div>
+      <div>{{senderAddressLine1}}</div>
+      <div>{{senderAddressLine2}}</div>
+      <div>tel. {{senderPhone}}</div>
+      <div class="muted">(nadawca)</div>
+    </div>
+    <div class="recipient" style="text-align: right;">
+      <div><strong>{{recipientName}}</strong></div>
+      <div>{{recipientAddressLine1}}</div>
+      <div>{{recipientAddressLine2}}</div>
+      <div class="muted">(adresat)</div>
+      <div style="margin-top: 12px;">{{documentPlace}}, dnia {{documentDate}}</div>
+      <div>ID {{kergId}}</div>
+    </div>
+  </div>
+
+  <div class="center">
+    <h1>Z A W I A D O M I E N I E</h1>
+    <h2>o {{notificationTitle}}</h2>
+  </div>
+
+  <p>
+    Na podstawie art. 39 ust. 3 ustawy z dnia 17 maja 1989 r. Prawo geodezyjne i kartograficzne
+    (tekst jedn. Dz.U. z 2021 r. poz. 1990) uprzejmie zawiadamiam, że w dniu
+    <strong>{{meetingDate}}</strong> o godz. <strong>{{meetingTime}}</strong> zostaną przeprowadzone czynności
+    {{notificationType}} dotyczące nieruchomości oznaczonej w ewidencji gruntów jako działka nr
+    <strong>{{subjectParcelId}}</strong>, położona w województwie <strong>{{wojewodztwo}}</strong>,
+    powiat <strong>{{powiat}}</strong>, gmina <strong>{{gmina}}</strong>, obręb <strong>{{obreb}}</strong>{{#dzialkaPrzedmiotowa}},
+    granicząca z działką nr <strong>{{dzialkaPrzedmiotowa}}</strong>{{/dzialkaPrzedmiotowa}}.
+  </p>
+
+  <p><strong>Spotkanie odbędzie się w: {{meetingPlace}}</strong></p>
+
+  <p>
+    Wykonawca: <strong>{{surveyorName}}</strong>, upr. nr {{surveyorLicense}}, KERG: {{kergId}}.
+  </p>
+
+  <h3>POUCZENIE</h3>
+  <p>Zawiadomieni właściciele (władający) gruntami proszeni są o przybycie w oznaczonym terminie z dokumentami tożsamości oraz dokumentami dotyczącymi granic nieruchomości.</p>
+  <p>W imieniu osób nieobecnych mogą występować odpowiednio umocowani pełnomocnicy. W przypadku współwłasności / współużytkowania wieczystego / małżeńskiej wspólności ustawowej – uczestnikami postępowania są wszystkie strony.</p>
+  <p>Nieusprawiedliwione niestawiennictwo stron nie wstrzymuje czynności geodety.</p>
+
+  <div style="margin-top: 28px; text-align: right;">
+    <div><strong>{{surveyorName}}</strong></div>
+    <div>upr. nr {{surveyorLicense}}</div>
+    <div>{{documentDate}}</div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <h3 style="text-align:center;">Klauzula informacyjna dotycząca przetwarzania danych osobowych</h3>
+  <ol style="margin-top: 8px; padding-left: 18px;">
+    <li>Administratorem danych jest {{rodoAdministrator}}.</li>
+    <li>Kontakt do inspektora ochrony danych: {{rodoContact}}.</li>
+    <li>Dane przetwarzane są w celu realizacji prac geodezyjnych KERG {{kergId}} na podstawie art. 6 ust. 1 RODO.</li>
+    <li>Odbiorcami danych mogą być organy publiczne i podmioty uprawnione z mocy prawa.</li>
+    <li>Dane nie będą udostępniane podmiotom trzecim poza uprawnionymi.</li>
+    <li>Dane przechowywane są przez okres wymagany przepisami prawa.</li>
+    <li>Przysługuje prawo dostępu do danych, ich sprostowania, usunięcia, ograniczenia przetwarzania, sprzeciwu oraz cofnięcia zgody (jeśli przetwarzanie opiera się na zgodzie).</li>
+    <li>Przysługuje prawo wniesienia skargi do organu nadzorczego w przypadku naruszenia przepisów RODO.</li>
+    <li>Dane nie będą profilowane ani przetwarzane w sposób zautomatyzowany.</li>
+  </ol>
+</body>
+</html>

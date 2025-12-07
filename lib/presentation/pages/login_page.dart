@@ -3,13 +3,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/auth_service.dart';
-import '../../services/local_storage.dart' as OfStorage;
+import '../../services/secure_storage_service.dart';
 import '../theme/app_theme.dart';
 
 class LoginPage extends StatefulWidget {
   final Future<void> Function() onSignedIn;
+  final String? initialMessage;
 
-  const LoginPage({super.key, required this.onSignedIn});
+  const LoginPage({super.key, required this.onSignedIn, this.initialMessage});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -20,10 +21,12 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
+  final SecureStorageService _secureStorage = SecureStorageService();
 
   bool _isLoading = false;
   String? _errorMessage;
   bool _rememberMe = false;
+   bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -39,8 +42,8 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _prefillSavedCredentials() async {
-    final creds = await OfStorage.LocalStorage.loadCredentials();
-    if (creds != null) {
+    final creds = await _secureStorage.getCredentials();
+    if (creds['email'] != null || creds['password'] != null) {
       setState(() {
         _emailController.text = creds['email'] ?? '';
         _passwordController.text = creds['password'] ?? '';
@@ -56,17 +59,22 @@ class _LoginPageState extends State<LoginPage> {
       _errorMessage = null;
     });
     try {
+      // Jeśli była poprzednia sesja, zamknij ją przed nowym logowaniem (tylko raz).
+      if (_authService.client.auth.currentSession != null) {
+        await _authService.signOut();
+        await _secureStorage.clearSession();
+      }
       await _authService.signIn(
         _emailController.text.trim(),
         _passwordController.text,
       );
       if (_rememberMe) {
-        await OfStorage.LocalStorage.saveCredentials(
-          _emailController.text.trim(),
-          _passwordController.text,
+        await _secureStorage.saveCredentials(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
         );
       } else {
-        await OfStorage.LocalStorage.clearCredentials();
+        await _secureStorage.clearCredentials();
       }
       await widget.onSignedIn();
     } on AuthException catch (e) {
@@ -136,11 +144,15 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _passwordController,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Haslo',
-                          prefixIcon: Icon(Icons.lock_outline),
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
                         ),
-                        obscureText: true,
+                        obscureText: _obscurePassword,
                         autofillHints: const [AutofillHints.password],
                         validator: (value) => (value == null || value.isEmpty) ? 'Wpisz haslo' : null,
                       ),
@@ -157,6 +169,14 @@ class _LoginPageState extends State<LoginPage> {
                         ],
                       ),
                       const SizedBox(height: 8),
+                      if (widget.initialMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            widget.initialMessage!,
+                            style: textTheme.bodyMedium?.copyWith(color: AppColors.warning),
+                          ),
+                        ),
                       if (_errorMessage != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),

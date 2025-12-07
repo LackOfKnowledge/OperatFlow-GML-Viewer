@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/models/parcel.dart';
 import '../../data/teryt_data.dart';
 import '../../services/company_defaults_service.dart';
-import '../../services/gml_service.dart';
+import '../../repositories/gml_repository.dart';
 import '../../services/notification_service.dart';
 
 class NotificationFormPage extends StatefulWidget {
   final List<Parcel> parcels;
-  final GmlService gmlService;
+  final GmlRepository gmlRepository;
   final bool isLicensed;
   final VoidCallback onLicenseBlocked;
 
   const NotificationFormPage({
     super.key,
     required this.parcels,
-    required this.gmlService,
+    required this.gmlRepository,
     required this.isLicensed,
     required this.onLicenseBlocked,
   });
@@ -60,6 +61,10 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
   final _senderEmailController = TextEditingController();
   String _authorityType = 'Wójta Gminy';
   DateTime _decisionSelectedDate = DateTime.now();
+  // Akceptujemy pe‘'ny identyfikator EGB (WWPPGG_R.XXXX.NDZ[/...]) lub prosty numer dzia‘'ki (np. 60/5).
+  final RegExp _parcelFullIdPattern = RegExp(r'^\d{4,}_\d{1,2}\.\d{1,4}\.\d+(?:/\d+)?$');
+  final RegExp _parcelSimplePattern = RegExp(r'^\d+(?:[./]\d+)*$');
+  final RegExp _kwPattern = RegExp(r'^[A-Z0-9]{3,4}/\d{8}/\d$');
 
   // Universal sender/company and recipient fields
   final _senderCompanyController = TextEditingController();
@@ -74,7 +79,7 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
   @override
   void initState() {
     super.initState();
-    _notificationService = NotificationService(widget.gmlService);
+    _notificationService = NotificationService(widget.gmlRepository);
     final now = DateTime.now();
     _selectedDate = now;
     _decisionSelectedDate = now;
@@ -206,12 +211,37 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
   }
 
   void _generate() async {
+    void showFormError(String message) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+
     if (!widget.isLicensed) {
       widget.onLicenseBlocked();
       return;
     }
 
     if (!_formKey.currentState!.validate()) return;
+
+    for (final parcel in widget.parcels) {
+      final fullMatch = _parcelFullIdPattern.hasMatch(parcel.idDzialki);
+      final simpleMatch = _parcelSimplePattern.hasMatch(parcel.numerDzialki);
+      final isValid = fullMatch || simpleMatch;
+      debugPrint(
+        'Parcel check before generate -> id=${parcel.idDzialki} numer=${parcel.numerDzialki} '
+        'fullMatch=$fullMatch simpleMatch=$simpleMatch valid=$isValid',
+      );
+      if (!isValid) {
+        showFormError('Niepoprawny numer działki: ${parcel.numerDzialki}');
+        return;
+      }
+      final kw = parcel.numerKW;
+      if (kw != null && kw.isNotEmpty && !_kwPattern.hasMatch(kw)) {
+        showFormError('Niepoprawny numer KW: $kw');
+        return;
+      }
+    }
 
     final timeParts = _timeController.text.split(':');
     final hour = int.tryParse(timeParts.first) ?? 0;
@@ -434,7 +464,21 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
           decoration: const InputDecoration(labelText: 'Działka przedmiotowa'),
           items: widget.parcels.map((p) => DropdownMenuItem(value: p, child: Text(p.numerDzialki))).toList(),
           onChanged: (value) => setState(() => _subjectParcel = value),
-          validator: (val) => val == null ? 'Wybierz działkę przedmiotową' : null,
+          validator: (val) {
+            if (val == null) return 'Wybierz działkę przedmiotową';
+            final id = val.idDzialki;
+            final numer = val.numerDzialki;
+            final fullMatch = _parcelFullIdPattern.hasMatch(id);
+            final simpleMatch = _parcelSimplePattern.hasMatch(numer);
+            final isValid = fullMatch || simpleMatch;
+            debugPrint('Parcel validator -> id=$id numer=$numer fullMatch=$fullMatch simpleMatch=$simpleMatch valid=$isValid');
+            if (!isValid) return 'Niepoprawny numer działki (np. 221208_2.0026.60/5 lub 60/5)';
+            final kw = val.numerKW;
+            if (kw != null && kw.isNotEmpty && !_kwPattern.hasMatch(kw)) {
+              return 'Niepoprawny numer KW (np. AB1C/00000000/0)';
+            }
+            return null;
+          },
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String?>(

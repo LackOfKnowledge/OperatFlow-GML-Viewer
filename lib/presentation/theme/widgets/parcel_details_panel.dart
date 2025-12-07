@@ -7,32 +7,32 @@ import '../../../data/models/legal_basis.dart';
 import '../../../data/models/parcel.dart';
 import '../../../data/models/premises.dart';
 import '../../../data/models/subject.dart';
-import '../../../services/gml_service.dart';
+import '../../../repositories/gml_repository.dart';
 
 enum ParcelDetailView { parcel, parties, points, buildings }
 
 class ParcelDetailsPanel extends StatelessWidget {
   final Parcel parcel;
-  final GmlService gmlService;
+  final GmlRepository gmlRepository;
   final ParcelDetailView view;
 
   const ParcelDetailsPanel({
     super.key,
     required this.parcel,
-    required this.gmlService,
+    required this.gmlRepository,
     this.view = ParcelDetailView.parcel,
   });
 
   @override
   Widget build(BuildContext context) {
-    final addresses = gmlService.getAddressesForParcel(parcel);
-    final owners = gmlService.getSubjectsForParcel(parcel);
-    final points = gmlService.getPointsForParcel(parcel);
-    final buildings = gmlService.getBuildingsForParcel(parcel);
-    final premises = gmlService.getPremisesForParcel(parcel);
-    final legalBases = gmlService.getLegalBasesForParcel(parcel);
-    final useContours = gmlService.getLandUseContours(parcel);
-    final classContours = gmlService.getClassificationContours(parcel);
+    final addresses = gmlRepository.getAddressesForParcel(parcel);
+    final owners = gmlRepository.getSubjectsForParcel(parcel);
+    final points = gmlRepository.getPointsForParcel(parcel);
+    final buildings = gmlRepository.getBuildingsForParcel(parcel);
+    final premises = gmlRepository.getPremisesForParcel(parcel);
+    final legalBases = gmlRepository.getLegalBasesForParcel(parcel);
+    final useContours = gmlRepository.getLandUseContours(parcel);
+    final classContours = gmlRepository.getClassificationContours(parcel);
 
     final children = <Widget>[];
 
@@ -107,7 +107,7 @@ class ParcelDetailsPanel extends StatelessWidget {
               .map((entry) {
                 final subject = entry.value;
                 final subjectAddresses =
-                    subject != null ? gmlService.getAddressesForSubject(subject) : const <Address>[];
+                    subject != null ? gmlRepository.getAddressesForSubject(subject) : const <Address>[];
                 if (subject == null || subjectAddresses.isEmpty) {
                   return const SizedBox.shrink();
                 }

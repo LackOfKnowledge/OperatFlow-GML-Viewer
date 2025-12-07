@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    :root {
+      --border: #d9dde5;
+      --text: #0f172a;
+      --muted: #4b5563;
+      --accent: #1d4ed8;
+    }
+    body { font-family: "Noto Sans", Arial, sans-serif; color: var(--text); margin: 20px; font-size: 11px; }
+    header { margin-bottom: 14px; }
+    header .title { font-size: 15px; font-weight: 700; letter-spacing: 0.3px; }
+    header .meta { color: var(--muted); font-size: 10px; }
+    .parcel { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; page-break-after: always; }
+    .parcel h2 { margin: 0; font-size: 15px; }
+    .parcel h3 { margin: 12px 0 6px; font-size: 12px; }
+    .muted { color: var(--muted); font-size: 10px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; margin-top: 8px; font-size: 11px; }
+    ul { margin: 6px 0 0 16px; padding: 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 10px; }
+    th, td { border: 1px solid var(--border); padding: 4px 5px; text-align: left; }
+    th { background: #f3f6fb; font-weight: 700; }
+    .badge { display: inline-block; padding: 2px 8px; background: #eff6ff; color: var(--accent); border-radius: 999px; font-size: 10px; }
+    .pill { display:inline-block; padding:2px 6px; border-radius:6px; background:#eef2f7; font-size:11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">OperatFlow — Raport {{modeLabel}}</div>
+    <div class="meta">Wygenerowano: {{generatedAt}}</div>
+  </header>
+
+  {{#parcels}}
+  <section class="parcel">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <h2>Działka {{numerDzialki}}</h2>
+        <div class="muted">{{idDzialki}}</div>
+      </div>
+      <div class="badge">{{modeLabel}}</div>
+    </div>
+    <div class="meta-grid">
+      <div><strong>Obręb:</strong> {{obreb}}</div>
+      <div><strong>KW:</strong> {{kw}}</div>
+      <div><strong>Pow. ewidencyjna:</strong> {{powierzchnia}}</div>
+    </div>
+
+    <h3>Adresy</h3>
+    <ul>
+      {{#adresy}}<li>{{.}}</li>{{/adresy}}
+      {{^adresy}}<li class="muted">Brak adresów</li>{{/adresy}}
+    </ul>
+
+    {{#showFull}}
+    <h3>Użytki gruntowe</h3>
+    <table>
+      <tr><th>OFU</th><th>OZU</th><th>OZK</th><th>Pow. (ha)</th></tr>
+      {{#landUses}}<tr><td>{{ofu}}</td><td>{{ozu}}</td><td>{{ozk}}</td><td>{{powierzchnia}}</td></tr>{{/landUses}}
+      {{^landUses}}<tr><td colspan="4" class="muted">Brak danych</td></tr>{{/landUses}}
+    </table>
+
+    <h3>Kontury klasyfikacyjne</h3>
+    <table>
+      <tr><th>OFU</th><th>OZU</th><th>OZK</th><th>Pow. (ha)</th></tr>
+      {{#classUses}}<tr><td>{{ofu}}</td><td>{{ozu}}</td><td>{{ozk}}</td><td>{{powierzchnia}}</td></tr>{{/classUses}}
+      {{^classUses}}<tr><td colspan="4" class="muted">Brak danych</td></tr>{{/classUses}}
+    </table>
+
+    <h3>Podmioty i udziały</h3>
+    <ul>
+      {{#owners}}
+        <li>
+          <strong>{{name}}</strong> — <span class="pill">{{share}}</span> {{#right}}({{right}}){{/right}}<br/>
+          <span class="muted">{{role}}</span>
+          {{#addresses}}
+            <div class="muted">{{.}}</div>
+          {{/addresses}}
+        </li>
+      {{/owners}}
+      {{^owners}}<li class="muted">Brak danych o podmiotach</li>{{/owners}}
+    </ul>
+
+    <h3>Budynki</h3>
+    <table>
+      <tr><th>Id</th><th>Opis</th></tr>
+      {{#buildings}}<tr><td>{{label}}</td><td>{{description}}</td></tr>{{/buildings}}
+      {{^buildings}}<tr><td colspan="2" class="muted">Brak danych</td></tr>{{/buildings}}
+    </table>
+
+    <h3>Lokale</h3>
+    <table>
+      <tr><th>Id</th><th>Opis</th></tr>
+      {{#premises}}<tr><td>{{label}}</td><td>{{description}}</td></tr>{{/premises}}
+      {{^premises}}<tr><td colspan="2" class="muted">Brak danych</td></tr>{{/premises}}
+    </table>
+
+    <h3>Podstawy prawne</h3>
+    <table>
+      <tr><th>Dokument</th><th>Opis</th></tr>
+      {{#legal}}<tr><td>{{label}}</td><td>{{description}}</td></tr>{{/legal}}
+      {{^legal}}<tr><td colspan="2" class="muted">Brak danych</td></tr>{{/legal}}
+    </table>
+    {{/showFull}}
+
+    <h3>Punkty graniczne</h3>
+    <table>
+      <tr>
+        <th>Id</th><th>Nr</th><th>X</th><th>Y</th><th>SPD</th><th>ISD</th><th>Operat</th>
+      </tr>
+      {{#points}}
+        <tr>
+          <td>{{id}}</td>
+          <td>{{nr}}</td>
+          <td>{{x}}</td>
+          <td>{{y}}</td>
+          <td>{{spd}}</td>
+          <td>{{isd}}</td>
+          <td>{{operat}}</td>
+        </tr>
+      {{/points}}
+      {{^points}}<tr><td colspan="7" class="muted">Brak punktów</td></tr>{{/points}}
+    </table>
+  </section>
+  {{/parcels}}
+</body>
+</html>

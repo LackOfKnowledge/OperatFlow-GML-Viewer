@@ -1,19 +1,25 @@
 import 'dart:typed_data';
 
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show MissingPluginException, rootBundle;
 import 'package:intl/intl.dart';
+import 'package:mustache_template/mustache_template.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/widgets.dart' show PdfGoogleFonts;
 import 'package:printing/printing.dart';
 
 import '../data/models/address.dart';
 import '../data/models/parcel.dart';
 import '../data/teryt_data.dart';
-import 'gml_service.dart';
+import '../repositories/gml_repository.dart';
 
 class NotificationService {
-  NotificationService(this.gmlService);
+  NotificationService(this.gmlRepository);
 
-  final GmlService gmlService;
+  final GmlRepository gmlRepository;
 
   Future<void> generateRenewalNotification({
     required List<Parcel> parcels,
@@ -36,7 +42,57 @@ class NotificationService {
     required String rodoContact,
     String? powiatManual,
   }) async {
-    final pdf = await _buildRenewalPdf(
+    if (_htmlSupported()) {
+      final html = await _buildRenewalHtml(
+        parcels: parcels,
+        notificationType: notificationType,
+        kergId: kergId,
+        date: date,
+        surveyorName: surveyorName,
+        surveyorLicense: surveyorLicense,
+        place: place,
+        meetingPlace: meetingPlace,
+        senderCompany: senderCompany,
+        senderName: senderName,
+        senderAddressLine1: senderAddressLine1,
+        senderAddressLine2: senderAddressLine2,
+        senderPhone: senderPhone,
+        recipientName: recipientName,
+        recipientAddressLine1: recipientAddressLine1,
+        recipientAddressLine2: recipientAddressLine2,
+        rodoAdministrator: rodoAdministrator,
+        rodoContact: rodoContact,
+        powiatManual: powiatManual,
+      );
+      await _convertHtmlWithFallback(
+        html: html,
+        label: 'notification-renewal',
+        onFallback: () => _buildRenewalPw(
+          parcels: parcels,
+          notificationType: notificationType,
+          kergId: kergId,
+          date: date,
+          surveyorName: surveyorName,
+          surveyorLicense: surveyorLicense,
+          place: place,
+          meetingPlace: meetingPlace,
+          senderCompany: senderCompany,
+          senderName: senderName,
+          senderAddressLine1: senderAddressLine1,
+          senderAddressLine2: senderAddressLine2,
+          senderPhone: senderPhone,
+          recipientName: recipientName,
+          recipientAddressLine1: recipientAddressLine1,
+          recipientAddressLine2: recipientAddressLine2,
+          rodoAdministrator: rodoAdministrator,
+          rodoContact: rodoContact,
+          powiatManual: powiatManual,
+        ),
+      );
+      return;
+    }
+    debugPrint('convertHtml unsupported on ${Platform.operatingSystem}, using pw fallback (renewal)');
+    await _buildRenewalPw(
       parcels: parcels,
       notificationType: notificationType,
       kergId: kergId,
@@ -57,7 +113,128 @@ class NotificationService {
       rodoContact: rodoContact,
       powiatManual: powiatManual,
     );
-    await Printing.layoutPdf(onLayout: (_) => pdf);
+  }
+
+  List<_RecipientPage> _buildRecipientsForRenewal({
+    required List<Parcel> parcels,
+    required String recipientName,
+    required String recipientAddressLine1,
+    required String recipientAddressLine2,
+  }) {
+    final recipients = <_RecipientPage>[];
+    if (parcels.isEmpty) return recipients;
+    final subjectParcel = parcels.first;
+    final neighborParcels = parcels.length > 1 ? parcels.sublist(1) : <Parcel>[];
+
+    void addRecipientsForParcel(Parcel parcel, {bool isSubject = false}) {
+      final owners = gmlRepository.getSubjectsForParcel(parcel);
+      if (owners.isEmpty && isSubject) {
+        recipients.add(
+          _RecipientPage(
+            parcel: parcel,
+            ownerName: recipientName,
+            address: _addressFromForm(recipientAddressLine1, recipientAddressLine2),
+            subjectParcelForText: isSubject ? null : subjectParcel,
+          ),
+        );
+        return;
+      }
+
+      for (final entry in owners) {
+        final subject = entry.value;
+        if (subject == null) continue;
+        final addresses = gmlRepository.getAddressesForSubject(subject);
+        if (addresses.isEmpty) {
+          recipients.add(
+            _RecipientPage(
+              parcel: parcel,
+              ownerName: subject.name,
+              address: isSubject ? _addressFromForm(recipientAddressLine1, recipientAddressLine2) : null,
+              subjectParcelForText: isSubject ? null : subjectParcel,
+            ),
+          );
+        } else {
+          for (final addr in addresses) {
+            recipients.add(
+              _RecipientPage(
+                parcel: parcel,
+                ownerName: subject.name,
+                address: addr,
+                subjectParcelForText: isSubject ? null : subjectParcel,
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    addRecipientsForParcel(subjectParcel, isSubject: true);
+    for (final p in neighborParcels) {
+      addRecipientsForParcel(p);
+    }
+    return recipients;
+  }
+
+  List<_RecipientPage> _buildRecipientsForDemarcation({
+    required List<Parcel> parcels,
+    required String recipientName,
+    required String recipientAddressLine1,
+    required String recipientAddressLine2,
+  }) {
+    final recipients = <_RecipientPage>[];
+    if (parcels.isEmpty) return recipients;
+    final subjectParcel = parcels.first;
+    final neighborParcels = parcels.length > 1 ? parcels.sublist(1) : <Parcel>[];
+
+    void addRecipientsForParcel(Parcel parcel, {Parcel? subjectForNeighbor}) {
+      final owners = gmlRepository.getSubjectsForParcel(parcel);
+      if (owners.isEmpty && subjectForNeighbor == null) {
+        recipients.add(
+          _RecipientPage(
+            parcel: parcel,
+            ownerName: recipientName,
+            address: _addressFromForm(recipientAddressLine1, recipientAddressLine2),
+            subjectParcelForText: subjectForNeighbor,
+          ),
+        );
+        return;
+      }
+
+      for (final entry in owners) {
+        final subject = entry.value;
+        if (subject == null) continue;
+        final addresses = gmlRepository.getAddressesForSubject(subject);
+        if (addresses.isEmpty) {
+          recipients.add(
+            _RecipientPage(
+              parcel: parcel,
+              ownerName: subject.name,
+              address: subjectForNeighbor == null
+                  ? _addressFromForm(recipientAddressLine1, recipientAddressLine2)
+                  : null,
+              subjectParcelForText: subjectForNeighbor,
+            ),
+          );
+        } else {
+          for (final addr in addresses) {
+            recipients.add(
+              _RecipientPage(
+                parcel: parcel,
+                ownerName: subject.name,
+                address: addr,
+                subjectParcelForText: subjectForNeighbor,
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    addRecipientsForParcel(subjectParcel); // Dla działki przedmiotowej
+    for (final p in neighborParcels) {
+      addRecipientsForParcel(p, subjectForNeighbor: subjectParcel);
+    }
+    return recipients;
   }
 
   Future<void> generateDemarcationNotification({
@@ -87,7 +264,69 @@ class NotificationService {
     String? recipientAddressLine1,
     String? recipientAddressLine2,
   }) async {
-    final pdf = await _buildDemarcationPdf(
+    if (_htmlSupported()) {
+      final html = await _buildDemarcationHtml(
+        parcels: parcels,
+        caseNumber: caseNumber,
+        creationDate: creationDate,
+        meetingDate: meetingDate,
+        surveyorTitle: surveyorTitle,
+        surveyorName: surveyorName,
+        surveyorLicense: surveyorLicense,
+        placeOfCreation: placeOfCreation,
+        meetingPlace: meetingPlace,
+        companyName: companyName,
+        companyAddressLine1: companyAddressLine1,
+        companyAddressLine2: companyAddressLine2,
+        companyPhone: companyPhone,
+        companyEmail: companyEmail,
+        companyRodo: companyRodo,
+        decisionDate: decisionDate,
+        decisionNumber: decisionNumber,
+        authority: authority,
+        authorityName: authorityName,
+        inspectorEmail: inspectorEmail,
+        inspectorPhone: inspectorPhone,
+        powiatManual: powiatManual,
+        recipientName: recipientName ?? '',
+        recipientAddressLine1: recipientAddressLine1 ?? '',
+        recipientAddressLine2: recipientAddressLine2 ?? '',
+      );
+      await _convertHtmlWithFallback(
+        html: html,
+        label: 'notification-demarcation',
+        onFallback: () => _buildDemarcationPw(
+          parcels: parcels,
+          caseNumber: caseNumber,
+          creationDate: creationDate,
+          meetingDate: meetingDate,
+          surveyorTitle: surveyorTitle,
+          surveyorName: surveyorName,
+          surveyorLicense: surveyorLicense,
+          placeOfCreation: placeOfCreation,
+          meetingPlace: meetingPlace,
+          companyName: companyName,
+          companyAddressLine1: companyAddressLine1,
+          companyAddressLine2: companyAddressLine2,
+          companyPhone: companyPhone,
+          companyEmail: companyEmail,
+          companyRodo: companyRodo,
+          decisionDate: decisionDate,
+          decisionNumber: decisionNumber,
+          authority: authority,
+          authorityName: authorityName,
+          inspectorEmail: inspectorEmail,
+          inspectorPhone: inspectorPhone,
+          powiatManual: powiatManual,
+          recipientName: recipientName ?? '',
+          recipientAddressLine1: recipientAddressLine1 ?? '',
+          recipientAddressLine2: recipientAddressLine2 ?? '',
+        ),
+      );
+      return;
+    }
+    debugPrint('convertHtml unsupported on ${Platform.operatingSystem}, using pw fallback (demarcation)');
+    await _buildDemarcationPw(
       parcels: parcels,
       caseNumber: caseNumber,
       creationDate: creationDate,
@@ -114,7 +353,200 @@ class NotificationService {
       recipientAddressLine1: recipientAddressLine1 ?? '',
       recipientAddressLine2: recipientAddressLine2 ?? '',
     );
-    await Printing.layoutPdf(onLayout: (_) => pdf);
+  }
+
+  Future<String> _buildRenewalHtml({
+    required List<Parcel> parcels,
+    required String notificationType,
+    required String kergId,
+    required DateTime date,
+    required String surveyorName,
+    required String surveyorLicense,
+    required String place,
+    required String meetingPlace,
+    required String senderCompany,
+    required String senderName,
+    required String senderAddressLine1,
+    required String senderAddressLine2,
+    required String senderPhone,
+    required String recipientName,
+    required String recipientAddressLine1,
+    required String recipientAddressLine2,
+    required String rodoAdministrator,
+    required String rodoContact,
+    String? powiatManual,
+  }) async {
+    if (parcels.isEmpty) return '';
+    final recipients = _buildRecipientsForRenewal(
+      parcels: parcels,
+      recipientName: recipientName,
+      recipientAddressLine1: recipientAddressLine1,
+      recipientAddressLine2: recipientAddressLine2,
+    );
+    final templateSource =
+        await rootBundle.loadString('assets/templates/notification_template.html');
+    final template = Template(templateSource, htmlEscapeValues: true);
+    final buffer = StringBuffer();
+    final documentDate = DateFormat('yyyy-MM-dd').format(date);
+    final meetingTime = DateFormat('HH:mm').format(date);
+    for (var i = 0; i < recipients.length; i++) {
+      final rec = recipients[i];
+      final targetParcel = rec.subjectParcelForText ?? rec.parcel;
+      final territory = _territory(targetParcel, powiatManual: powiatManual);
+      final data = {
+        'senderCompany': senderCompany,
+        'senderName': senderName,
+        'senderAddressLine1': senderAddressLine1,
+        'senderAddressLine2': senderAddressLine2,
+        'senderPhone': senderPhone,
+        'documentPlace': place,
+        'documentDate': documentDate,
+        'kergId': kergId,
+        'recipientName': rec.ownerName,
+        'recipientAddressLine1': _line1(rec.address),
+        'recipientAddressLine2': _line2(rec.address),
+        'notificationTitle': notificationType,
+        'meetingDate': documentDate,
+        'meetingTime': meetingTime,
+        'notificationType': notificationType.toLowerCase(),
+        'subjectParcelId': targetParcel.idDzialki,
+        'obreb': _formatObreb(targetParcel),
+        'gmina': targetParcel.jednostkaNazwa ?? '-',
+        'powiat': territory['powiat'],
+        'wojewodztwo': territory['woj'],
+        'dzialkaPrzedmiotowa': rec.subjectParcelForText != null ? rec.parcel.idDzialki : null,
+        'meetingPlace': meetingPlace,
+        'surveyorName': surveyorName,
+        'surveyorLicense': surveyorLicense,
+        'rodoAdministrator': rodoAdministrator,
+        'rodoContact': rodoContact,
+      };
+      buffer.write(template.renderString(data));
+      if (i != recipients.length - 1) {
+        buffer.write('<div class="page-break"></div>');
+      }
+    }
+    return buffer.toString();
+  }
+
+  Future<void> _convertHtmlWithFallback({
+    required String html,
+    required Future<void> Function() onFallback,
+    required String label,
+  }) async {
+    try {
+      debugPrint('convertHtml ($label) len=${html.length} platform=${Platform.operatingSystem}');
+      await Printing.convertHtml(
+        html: html,
+        format: PdfPageFormat.a4,
+      );
+      debugPrint('convertHtml ($label) success');
+      return;
+    } on MissingPluginException catch (e, st) {
+      debugPrint('convertHtml missing plugin ($label) on ${Platform.operatingSystem}: $e');
+      debugPrint('$st');
+    } catch (e, st) {
+      debugPrint('convertHtml failed ($label): $e');
+      debugPrint('$st');
+    }
+
+    debugPrint('Falling back to pw generator for $label');
+    await onFallback();
+  }
+
+  bool _htmlSupported() {
+    if (kIsWeb) return true;
+    if (Platform.isWindows || Platform.isLinux) return false;
+    return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+  }
+
+  Future<String> _buildDemarcationHtml({
+    required List<Parcel> parcels,
+    required String caseNumber,
+    required DateTime creationDate,
+    required DateTime meetingDate,
+    required String surveyorTitle,
+    required String surveyorName,
+    required String surveyorLicense,
+    required String placeOfCreation,
+    required String meetingPlace,
+    required String companyName,
+    required String companyAddressLine1,
+    required String companyAddressLine2,
+    required String companyPhone,
+    required String companyEmail,
+    required String companyRodo,
+    required DateTime decisionDate,
+    required String decisionNumber,
+    required String authority,
+    required String authorityName,
+    required String inspectorEmail,
+    required String inspectorPhone,
+    String? powiatManual,
+    required String recipientName,
+    required String recipientAddressLine1,
+    required String recipientAddressLine2,
+  }) async {
+    if (parcels.isEmpty) return '';
+    final recipients = _buildRecipientsForDemarcation(
+      parcels: parcels,
+      recipientName: recipientName,
+      recipientAddressLine1: recipientAddressLine1,
+      recipientAddressLine2: recipientAddressLine2,
+    );
+    final templateSource = await rootBundle
+        .loadString('assets/templates/demarcation_notification_template.html');
+    final template = Template(templateSource, htmlEscapeValues: true);
+    final buffer = StringBuffer();
+    final subjectParcel = parcels.first;
+    final neighborParcels =
+        parcels.length > 1 ? parcels.sublist(1).map((p) => p.idDzialki).join(', ') : '';
+    final creationDateStr = DateFormat('yyyy-MM-dd').format(creationDate);
+    final meetingDateStr = DateFormat('yyyy-MM-dd').format(meetingDate);
+    final meetingTimeStr = DateFormat('HH:mm').format(meetingDate);
+    final decisionDateStr = DateFormat('yyyy-MM-dd').format(decisionDate);
+    final territory = _territory(subjectParcel, powiatManual: powiatManual);
+
+    for (var i = 0; i < recipients.length; i++) {
+      final rec = recipients[i];
+      final data = {
+        'companyName': companyName,
+        'companyAddressLine1': companyAddressLine1,
+        'companyAddressLine2': companyAddressLine2,
+        'companyPhone': companyPhone,
+        'companyEmail': companyEmail,
+        'companyRodo': companyRodo,
+        'recipientName': rec.ownerName,
+        'recipientAddressLine1': _line1(rec.address),
+        'recipientAddressLine2': _line2(rec.address),
+        'placeOfCreation': placeOfCreation,
+        'creationDate': creationDateStr,
+        'caseNumber': caseNumber,
+        'decisionDate': decisionDateStr,
+        'decisionNumber': decisionNumber,
+        'authority': authority,
+        'authorityName': authorityName,
+        'meetingDate': meetingDateStr,
+        'meetingTime': meetingTimeStr,
+        'meetingPlace': meetingPlace,
+        'subjectParcelId': subjectParcel.idDzialki,
+        'neighborParcels': neighborParcels,
+        'obreb': _formatObreb(subjectParcel),
+        'gmina': subjectParcel.jednostkaNazwa ?? '-',
+        'wojewodztwo': territory['woj'],
+        'powiat': territory['powiat'],
+        'surveyorTitle': surveyorTitle,
+        'surveyorName': surveyorName,
+        'surveyorLicense': surveyorLicense,
+        'inspectorEmail': inspectorEmail,
+        'inspectorPhone': inspectorPhone,
+      };
+      buffer.write(template.renderString(data));
+      if (i != recipients.length - 1) {
+        buffer.write('<div style="page-break-after: always;"></div>');
+      }
+    }
+    return buffer.toString();
   }
 
   Future<Uint8List> _buildDemarcationPdf({
@@ -156,7 +588,7 @@ class NotificationService {
     final neighborParcels = parcels.length > 1 ? parcels.sublist(1) : <Parcel>[];
 
     void addRecipientsForParcel(Parcel parcel, {bool isSubject = false}) {
-       final owners = gmlService.getSubjectsForParcel(parcel);
+       final owners = gmlRepository.getSubjectsForParcel(parcel);
        if(owners.isEmpty && isSubject) {
           recipients.add(_RecipientPage(
             parcel: parcel,
@@ -170,7 +602,7 @@ class NotificationService {
        for (final entry in owners) {
          final subject = entry.value;
          if (subject == null) continue;
-         final addresses = gmlService.getAddressesForSubject(subject);
+         final addresses = gmlRepository.getAddressesForSubject(subject);
          if (addresses.isEmpty) {
            recipients.add(_RecipientPage(
              parcel: parcel,
@@ -231,7 +663,7 @@ class NotificationService {
               neighboringParcels: rec.isNeighbor
                   ? [rec.parcel.idDzialki]
                   : neighborParcels.map((e) => e.idDzialki).toList(),
-              gmlService: gmlService,
+              gmlRepository: gmlRepository,
               powiatManual: powiatManual,
             ),
             _buildDemarcationSignature(
@@ -355,7 +787,7 @@ class NotificationService {
     required String meetingPlace,
     required Parcel parcel,
     required List<String> neighboringParcels,
-    required GmlService gmlService,
+    required GmlRepository gmlRepository,
     String? powiatManual,
   }) {
     final terytCode = parcel.idDzialki.split('.').first.replaceAll('_', '');
@@ -517,7 +949,7 @@ class NotificationService {
       final powiat = powiatManual?.isNotEmpty == true ? powiatManual! : (powiaty[powiatCode] ?? '-');
       final wojewodztwo = wojewodztwa[wojewodztwoCode] ?? '-';
 
-      final owners = gmlService.getSubjectsForParcel(parcel);
+      final owners = gmlRepository.getSubjectsForParcel(parcel);
       if (owners.isEmpty && subjectForNeighbor == null) {
         recipients.add(_RecipientPage(
           parcel: parcel,
@@ -531,7 +963,7 @@ class NotificationService {
       for (final entry in owners) {
         final subject = entry.value;
         if (subject == null) continue;
-        final addresses = gmlService.getAddressesForSubject(subject);
+        final addresses = gmlRepository.getAddressesForSubject(subject);
         if (addresses.isEmpty) {
           recipients.add(_RecipientPage(
             parcel: parcel,
@@ -741,6 +1173,230 @@ class NotificationService {
     return [address.kodPocztowy, address.miejscowosc].where((e) => e?.trim().isNotEmpty == true).join(' ');
   }
 
+  Future<void> _buildRenewalPw({
+    required List<Parcel> parcels,
+    required String notificationType,
+    required String kergId,
+    required DateTime date,
+    required String surveyorName,
+    required String surveyorLicense,
+    required String place,
+    required String meetingPlace,
+    required String senderCompany,
+    required String senderName,
+    required String senderAddressLine1,
+    required String senderAddressLine2,
+    required String senderPhone,
+    required String recipientName,
+    required String recipientAddressLine1,
+    required String recipientAddressLine2,
+    required String rodoAdministrator,
+    required String rodoContact,
+    String? powiatManual,
+  }) async {
+    final doc = pw.Document();
+    final fontRegular = await PdfGoogleFonts.notoSansRegular();
+    final fontBold = await PdfGoogleFonts.notoSansBold();
+    final theme = pw.ThemeData.withFont(base: fontRegular, bold: fontBold);
+    final parcel = parcels.first;
+    final territory = _territory(parcel, powiatManual: powiatManual);
+    final meetingDate = DateFormat('yyyy-MM-dd').format(date);
+    final meetingTime = DateFormat('HH:mm').format(date);
+
+    doc.addPage(
+      pw.MultiPage(
+        theme: theme,
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (_) => [
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(senderCompany, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text(senderName),
+                  pw.Text(senderAddressLine1),
+                  pw.Text(senderAddressLine2),
+                  pw.Text('tel. $senderPhone'),
+                  pw.Text('(nadawca)', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                ],
+              ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text(recipientName, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text(recipientAddressLine1),
+                  pw.Text(recipientAddressLine2),
+                  pw.Text('(adresat)', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                  pw.SizedBox(height: 12),
+                  pw.Text('$place, $meetingDate'),
+                  pw.Text('ID $kergId'),
+                ],
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+          pw.Center(
+            child: pw.Column(
+              children: [
+                pw.Text('Z A W I A D O M I E N I E', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, letterSpacing: 1.2)),
+                pw.SizedBox(height: 6),
+                pw.Text('o $notificationType', style: pw.TextStyle(fontSize: 13)),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'Na podstawie art. 39 ust. 3 ustawy z dnia 17 maja 1989 r. Prawo geodezyjne i kartograficzne '
+            '(tekst jednolity Dz.U. z 2021 r. poz. 1990) uprzejmie zawiadamiam, że w dniu '
+            '$meetingDate o godz. $meetingTime zostaną przeprowadzone czynności $notificationType dotyczące '
+            'nieruchomości oznaczonej w ewidencji gruntów jako działka nr ${parcel.idDzialki}, '
+            'położonej w województwie ${territory['woj']}, powiat ${territory['powiat']}, gmina ${parcel.jednostkaNazwa ?? '-'} , obręb ${_formatObreb(parcel)}.',
+            textAlign: pw.TextAlign.justify,
+          ),
+          pw.SizedBox(height: 10),
+          pw.Text('Spotkanie odbędzie się w: $meetingPlace', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 12),
+          pw.Text('Wykonawca: $surveyorName, upr. nr $surveyorLicense, KERG: $kergId.'),
+          pw.SizedBox(height: 14),
+          pw.Text('POUCZENIE', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          pw.Bullet(text: 'Zawiadomieni właściciele proszeni są o przybycie z dokumentami tożsamości i dokumentami dotyczącymi granic.'),
+          pw.Bullet(text: 'W imieniu osób nieobecnych mogą występować pełnomocnicy.'),
+          pw.Bullet(text: 'Nieusprawiedliwione niestawiennictwo nie wstrzymuje czynności geodety.'),
+          pw.SizedBox(height: 20),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Text(surveyorName, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                pw.Text('upr. nr $surveyorLicense'),
+                pw.Text(meetingDate),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final bytes = await doc.save();
+    try {
+      debugPrint('layoutPdf (renewal pw fallback) on ${Platform.operatingSystem}');
+      await Printing.layoutPdf(onLayout: (_) => bytes);
+    } on MissingPluginException catch (e, st) {
+      debugPrint('layoutPdf missing plugin (renewal) on ${Platform.operatingSystem}: $e');
+      debugPrint('$st');
+    }
+  }
+
+  Future<void> _buildDemarcationPw({
+    required List<Parcel> parcels,
+    required String caseNumber,
+    required DateTime creationDate,
+    required DateTime meetingDate,
+    required String surveyorTitle,
+    required String surveyorName,
+    required String surveyorLicense,
+    required String placeOfCreation,
+    required String meetingPlace,
+    required String companyName,
+    required String companyAddressLine1,
+    required String companyAddressLine2,
+    required String companyPhone,
+    required String companyEmail,
+    required String companyRodo,
+    required DateTime decisionDate,
+    required String decisionNumber,
+    required String authority,
+    required String authorityName,
+    required String inspectorEmail,
+    required String inspectorPhone,
+    String? powiatManual,
+    required String recipientName,
+    required String recipientAddressLine1,
+    required String recipientAddressLine2,
+  }) async {
+    final doc = pw.Document();
+    final fontRegular = await PdfGoogleFonts.notoSansRegular();
+    final fontBold = await PdfGoogleFonts.notoSansBold();
+    final theme = pw.ThemeData.withFont(base: fontRegular, bold: fontBold);
+    final parcel = parcels.first;
+    final territory = _territory(parcel, powiatManual: powiatManual);
+    final creationDateStr = DateFormat('yyyy-MM-dd').format(creationDate);
+    final meetingDateStr = DateFormat('yyyy-MM-dd').format(meetingDate);
+    final meetingTimeStr = DateFormat('HH:mm').format(meetingDate);
+    final decisionDateStr = DateFormat('yyyy-MM-dd').format(decisionDate);
+    final neighborParcels =
+        parcels.length > 1 ? parcels.sublist(1).map((p) => p.idDzialki).join(', ') : '-';
+
+    doc.addPage(
+      pw.MultiPage(
+        theme: theme,
+        pageFormat: PdfPageFormat.a4,
+        build: (_) => [
+          pw.Text('Wezwanie do ustalenia granic', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 6),
+          pw.Text('Sprawa: $caseNumber | Data pisma: $creationDateStr | Postanowienie: $decisionDateStr nr $decisionNumber'),
+          pw.Text('Organ: $authority $authorityName'),
+          pw.SizedBox(height: 10),
+          pw.Text('Adresat: $recipientName'),
+          pw.Text(recipientAddressLine1),
+          pw.Text(recipientAddressLine2),
+          pw.SizedBox(height: 10),
+          pw.Text('Działka: ${parcel.idDzialki} (sąsiednie: $neighborParcels)'),
+          pw.Text('Obręb: ${_formatObreb(parcel)} | Gmina: ${parcel.jednostkaNazwa ?? '-'} | Powiat: ${territory['powiat']} | Woj: ${territory['woj']}'),
+          pw.Text('Czynność: $meetingDateStr $meetingTimeStr, miejsce: $meetingPlace'),
+          pw.SizedBox(height: 10),
+          pw.Text('Geodeta: ${surveyorTitle.isNotEmpty ? '$surveyorTitle ' : ''}$surveyorName (upr. $surveyorLicense)'),
+          pw.SizedBox(height: 10),
+          pw.Text('Firma: $companyName'),
+          pw.Text(companyAddressLine1),
+          pw.Text(companyAddressLine2),
+          pw.Text('Tel: $companyPhone | Email: $companyEmail'),
+          pw.SizedBox(height: 10),
+          pw.Text('RODO: $companyRodo | IOD: $inspectorEmail, $inspectorPhone'),
+        ],
+      ),
+    );
+
+    final bytes = await doc.save();
+    try {
+      debugPrint('layoutPdf (demarcation pw fallback) on ${Platform.operatingSystem}');
+      await Printing.layoutPdf(onLayout: (_) => bytes);
+    } on MissingPluginException catch (e, st) {
+      debugPrint('layoutPdf missing plugin (demarcation) on ${Platform.operatingSystem}: $e');
+      debugPrint('$st');
+    }
+  }
+
+  Map<String, String> _territory(Parcel parcel, {String? powiatManual}) {
+    final fallback = {'powiat': powiatManual ?? '-', 'woj': '-'};
+    final idPrefix = parcel.idDzialki.split('.').isNotEmpty ? parcel.idDzialki.split('.').first : null;
+    if (idPrefix == null) return fallback;
+    final terytCode = idPrefix.replaceAll('_', '');
+    if (terytCode.length < 4) return fallback;
+    final wojewodztwoCode = terytCode.substring(0, 2);
+    final powiatCode = terytCode.substring(0, 4);
+    return {
+      'powiat': powiatManual?.isNotEmpty == true ? powiatManual! : (powiaty[powiatCode] ?? '-'),
+      'woj': wojewodztwa[wojewodztwoCode] ?? '-',
+    };
+  }
+
+  String _formatObreb(Parcel parcel) {
+    final reg = RegExp(r'^\d+_\d\.(\d{4})');
+    final match = reg.firstMatch(parcel.idDzialki);
+    final obrebNumber = match != null ? match.group(1) : parcel.obrebId ?? '-';
+    final name = parcel.obrebNazwa ?? '';
+    if (name.isNotEmpty) {
+      return '$name ${obrebNumber ?? ''}'.trim();
+    }
+    return obrebNumber ?? '-';
+  }
+
   pw.Widget _buildHeaderAndRecipient({
     required String senderCompany,
     required String senderName,
@@ -932,8 +1588,8 @@ class NotificationService {
 
     final subjectParcel = parcels.first;
 
-    final participants = gmlService.getSubjectsForParcels(parcels);
-    final points = gmlService.getPointsForParcel(subjectParcel);
+    final participants = gmlRepository.getSubjectsForParcels(parcels);
+    final points = gmlRepository.getPointsForParcel(subjectParcel);
 
     doc.addPage(pw.MultiPage(
         theme: theme,
@@ -1000,7 +1656,7 @@ class NotificationService {
                   (index) => [
                         (index + 1).toString(),
                         participants[index].value?.name ?? '',
-                        gmlService
+                        gmlRepository
                             .getParcelsForSubject(participants[index].value!)
                             .map((p) => p.numerDzialki.split('.').last)
                             .join(', '),
@@ -1130,8 +1786,8 @@ class NotificationService {
 
     final subjectParcel = parcels.first;
     final neighborParcels = parcels.sublist(1);
-    final participants = gmlService.getSubjectsForParcels(parcels);
-    final points = gmlService.getPointsForParcel(subjectParcel);
+    final participants = gmlRepository.getSubjectsForParcels(parcels);
+    final points = gmlRepository.getPointsForParcel(subjectParcel);
 
     doc.addPage(pw.MultiPage(
         theme: theme,
@@ -1226,7 +1882,7 @@ class NotificationService {
                   participants.length,
                   (index) => [
                         participants[index].value?.name ?? '',
-                        gmlService
+                        gmlRepository
                             .getParcelsForSubject(participants[index].value!)
                             .map((p) => p.numerDzialki.split('.').last)
                             .join(', '),
@@ -1303,7 +1959,7 @@ class NotificationService {
 
     final subjectParcel = parcels.first;
     final neighborParcels = parcels.sublist(1);
-    final participants = gmlService.getSubjectsForParcels(parcels);
+    final participants = gmlRepository.getSubjectsForParcels(parcels);
 
     doc.addPage(pw.MultiPage(
         theme: theme,

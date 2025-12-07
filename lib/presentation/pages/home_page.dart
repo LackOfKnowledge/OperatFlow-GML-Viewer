@@ -1,23 +1,25 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:gmlviewer/data/models/parcel.dart';
 import '../../data/models/address.dart';
+import '../../providers/gml_provider.dart';
+import '../../repositories/gml_repository.dart';
 import '../../services/auth_service.dart';
 import '../../services/company_defaults_service.dart';
-import '../../services/gml_service.dart';
 import '../../services/parcel_report_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/widgets/parcel_geometry_preview.dart';
 import '../theme/widgets/parcel_details_panel.dart';
 import 'notification_form_page.dart';
 
-class HomePage extends StatefulWidget {
+class HomePage extends ConsumerStatefulWidget {
   final String? initialFilePath;
   final LicenseInfo? licenseInfo;
   final bool licenseLoading;
@@ -38,17 +40,16 @@ class HomePage extends StatefulWidget {
   });
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  final GmlService _gmlService = GmlService();
+class _HomePageState extends ConsumerState<HomePage> {
+  late final GmlRepository _gmlRepository;
   late final ParcelReportService _reportService;
   final CompanyDefaultsService _defaultsService = CompanyDefaultsService();
   
   List<Parcel> _selectedParcels = [];
   Parcel? _activeParcel;
-  bool _isLoading = false;
   String? _fileName;
   bool _isDragging = false;
   ParcelDetailView _detailView = ParcelDetailView.parcel;
@@ -62,7 +63,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _reportService = ParcelReportService(_gmlService);
+    _gmlRepository = ref.read(gmlRepositoryProvider);
+    _reportService = ParcelReportService(_gmlRepository);
     
     _initSharing();
   }
@@ -96,7 +98,6 @@ class _HomePageState extends State<HomePage> {
     }
 
     setState(() { 
-      _isLoading = true; 
       _selectedParcels.clear(); 
       _activeParcel = null; 
       _fileName = null;
@@ -105,14 +106,13 @@ class _HomePageState extends State<HomePage> {
     try {
       final file = File(path);
       final bytes = await file.readAsBytes();
-      await _gmlService.parseGml(bytes);
+      await ref.read(gmlStateProvider.notifier).loadFile(bytes);
+      if (!mounted) return;
       setState(() { 
         _fileName = file.path.split(Platform.pathSeparator).last;
       });
     } catch (e) {
-      if (mounted) _showError('Błąd podczas parsowania pliku: $e');
-    } finally {
-      if (mounted) setState(() { _isLoading = false; });
+      if (mounted) _showError('Blad podczas parsowania pliku: $e');
     }
   }
 
@@ -311,6 +311,11 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final gmlState = ref.watch(gmlStateProvider);
+    final parcels = gmlState.value ?? <Parcel>[];
+    final isParsing = gmlState.isLoading;
+    final parseError = gmlState.hasError ? gmlState.error : null;
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -344,7 +349,7 @@ class _HomePageState extends State<HomePage> {
                   context: context,
                   builder: (_) => NotificationFormPage(
                     parcels: _selectedParcels,
-                    gmlService: _gmlService,
+                    gmlRepository: _gmlRepository,
                     isLicensed: _hasPaidAccess,
                     onLicenseBlocked: _showLicenseRequired,
                   ),
@@ -409,12 +414,14 @@ class _HomePageState extends State<HomePage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (_isLoading)
+                  if (isParsing)
                     const Center(child: CircularProgressIndicator())
-                  else if (_gmlService.parcels.isEmpty)
+                  else if (parseError != null)
+                    _buildErrorState(parseError)
+                  else if (parcels.isEmpty)
                     _buildEmptyState()
                   else
-                    _buildContentLayout(),
+                    _buildContentLayout(parcels),
                     
                   if (_isDragging)
                     Container(
@@ -510,6 +517,29 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildErrorState(Object? error) {
+    final textTheme = Theme.of(context).textTheme;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+          const SizedBox(height: 12),
+          Text('Nie udało się przetworzyć pliku', style: textTheme.bodyMedium),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                error.toString(),
+                textAlign: TextAlign.center,
+                style: textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     final textTheme = Theme.of(context).textTheme;
     return Center(
@@ -529,131 +559,192 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildContentLayout() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          width: 320,
-          child: Container(
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              border: Border(right: BorderSide(color: AppColors.border)),
-            ),
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
+  Widget _buildContentLayout(List<Parcel> parcels) {
+    final activeParcel = parcels.contains(_activeParcel) ? _activeParcel : null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isStacked = constraints.maxWidth < 980;
+        final listWidth = constraints.maxWidth < 720 ? constraints.maxWidth * 0.45 : 320.0;
+        if (activeParcel == null) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: listWidth,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.surface,
+                    border: Border(right: BorderSide(color: AppColors.border)),
+                  ),
+                  child: Column(
                     children: [
-                      const Icon(Icons.list_alt_outlined, size: 20, color: AppColors.secondaryText),
-                      const SizedBox(width: 8),
-                      Text(
-                        'DZIALKI (${_gmlService.parcels.length})',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.1,
-                          color: AppColors.secondaryText,
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.list_alt_outlined, size: 20, color: AppColors.secondaryText),
+                            const SizedBox(width: 8),
+                            Text(
+                              'DZIALKI (${parcels.length})',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.1,
+                                    color: AppColors.secondaryText,
+                                  ),
+                            ),
+                          ],
                         ),
                       ),
+                      const Divider(height: 1),
+                      Expanded(child: _buildParcelList(parcels)),
                     ],
                   ),
                 ),
-                const Divider(height: 1),
-                Expanded(child: _buildParcelList()),
-              ],
-            ),
-          ),
-        ),
-        Expanded(
-          child: _activeParcel == null
-              ? Center(
+              ),
+              Expanded(
+                child: Center(
                   child: Text(
                     'Wybierz dzialke, aby wyswietlic szczegoly',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
                   ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+              ),
+            ],
+          );
+        }
+        final detailPanel = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Dzialka ${activeParcel!.numerDzialki}',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Obreb: ${_formatObreb(activeParcel)}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ParcelDetailView.values.map((v) {
+                final selected = _detailView == v;
+                final label = {
+                  ParcelDetailView.parcel: 'Dzialka',
+                  ParcelDetailView.parties: 'Podmioty, adresy i udzialy',
+                  ParcelDetailView.points: 'Punkty graniczne',
+                  ParcelDetailView.buildings: 'Budynki',
+                }[v]!;
+                return ChoiceChip(
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text(label),
+                  ),
+                  selected: selected,
+                  onSelected: (_) => setState(() => _detailView = v),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            if (_selectedParcels.isNotEmpty)
+              Text(
+                'Zaznaczone do raportu: ${_selectedParcels.length}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            const SizedBox(height: 16),
+            ParcelDetailsPanel(
+              parcel: activeParcel!,
+              gmlRepository: _gmlRepository,
+              view: _detailView,
+            ),
+          ],
+        );
+        final geometryPreview = ParcelGeometryPreview(parcel: activeParcel!, height: isStacked ? 240 : 200);
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: listWidth,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  border: Border(right: BorderSide(color: AppColors.border)),
+                ),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
                         children: [
-                          Expanded(
-                            flex: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Dzialka ${_activeParcel!.numerDzialki}',
-                                  style: Theme.of(context).textTheme.headlineSmall,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Obreb: ${_formatObreb(_activeParcel!)}',
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
-                                ),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: ParcelDetailView.values.map((v) {
-                                    final selected = _detailView == v;
-                                    final label = {
-                                      ParcelDetailView.parcel: 'Dzialka',
-                                      ParcelDetailView.parties: 'Podmioty, adresy i udzialy',
-                                      ParcelDetailView.points: 'Punkty graniczne',
-                                      ParcelDetailView.buildings: 'Budynki',
-                                    }[v]!;
-                                    return ChoiceChip(
-                                      label: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        child: Text(label),
-                                      ),
-                                      selected: selected,
-                                      onSelected: (_) => setState(() => _detailView = v),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                    );
-                                  }).toList(),
-                                ),
-                                const SizedBox(height: 16),
-                                if (_selectedParcels.isNotEmpty)
-                                  Text(
-                                    'Zaznaczone do raportu: ${_selectedParcels.length}',
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ),
-                                const SizedBox(height: 16),
-                                ParcelDetailsPanel(
-                                  parcel: _activeParcel!,
-                                  gmlService: _gmlService,
-                                  view: _detailView,
-                                ),
-                              ],
+                          const Icon(Icons.list_alt_outlined, size: 20, color: AppColors.secondaryText),
+                          const SizedBox(width: 8),
+                          Text(
+                            'DZIALKI (${parcels.length})',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1.1,
+                              color: AppColors.secondaryText,
                             ),
-                          ),
-                          const SizedBox(width: 24),
-                          Expanded(
-                            flex: 2,
-                            child: ParcelGeometryPreview(parcel: _activeParcel!, height: 200),
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(child: _buildParcelList(parcels)),
+                  ],
                 ),
-        ),
-      ],
+              ),
+            ),
+            Expanded(
+              child: activeParcel == null
+                  ? Center(
+                      child: Text(
+                        'Wybierz dzialke, aby wyswietlic szczegoly',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.secondaryText),
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (isStacked)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                detailPanel,
+                                const SizedBox(height: 16),
+                                geometryPreview,
+                              ],
+                            )
+                          else
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(flex: 3, child: detailPanel),
+                                const SizedBox(width: 24),
+                                Expanded(flex: 2, child: geometryPreview),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildParcelList() {
+  Widget _buildParcelList(List<Parcel> parcels) {
     return ListView.separated(
-      itemCount: _gmlService.parcels.length,
+      itemCount: parcels.length,
       separatorBuilder: (ctx, i) => const Divider(height: 1, indent: 16),
       itemBuilder: (context, index) {
-        final p = _gmlService.parcels[index];
+        final p = parcels[index];
         final isSelected = _selectedParcels.contains(p);
         final isActive = _activeParcel == p;
         return Material(
@@ -687,7 +778,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildMainInfo(Parcel parcel) {
-    final addresses = _gmlService.getAddressesForParcel(parcel);
+    final addresses = _gmlRepository.getAddressesForParcel(parcel);
     final addressStr = addresses.isNotEmpty ? addresses.map((a) => a.toSingleLine()).join('\n') : 'Brak danych';
 
     return _buildCard(
@@ -724,7 +815,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildOwnersSection(Parcel parcel) {
-    final owners = _gmlService.getSubjectsForParcel(parcel);
+    final owners = _gmlRepository.getSubjectsForParcel(parcel);
     return _buildCard(
       title: 'Właściciele / Władający',
       icon: Icons.people_outline,
@@ -733,7 +824,7 @@ class _HomePageState extends State<HomePage> {
         : Column(
             children: owners.map((e) {
               final subject = e.value;
-              final addresses = subject != null ? _gmlService.getAddressesForSubject(subject) : <Address>[];
+              final addresses = subject != null ? _gmlRepository.getAddressesForSubject(subject) : <Address>[];
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Row(
@@ -769,7 +860,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildPointsSection(Parcel parcel) {
-    final points = _gmlService.getPointsForParcel(parcel);
+    final points = _gmlRepository.getPointsForParcel(parcel);
     final textTheme = Theme.of(context).textTheme;
 
     return _buildCard(
